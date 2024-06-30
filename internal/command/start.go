@@ -23,6 +23,7 @@ func (command StartCommand) Execute(cmd *cobra.Command, args []string) {
 	app = tview.NewApplication()
 
 	logChannel = make(chan string)
+	stopToBroadcast = make(chan bool)
 	logsBox, mainFlex, dropdown := generateUI()
 
 	// Logları dinleyip UI'yi güncelle
@@ -42,7 +43,7 @@ func (command StartCommand) Execute(cmd *cobra.Command, args []string) {
 	}
 	defer client.CloseConnection()
 
-	go client.SendBroadcastMessage(stopToBroadcast)
+	go client.SendBroadcastMessage(stopToBroadcast, logChannel)
 
 	messages := make(chan string)
 
@@ -86,7 +87,6 @@ func generateUI() (*tview.TextView, *tview.Flex, *tview.DropDown) {
 	// Buton oluşturma
 	button := tview.NewButton("Click me")
 	button.SetSelectedFunc(func() {
-		// Buton işlevselliği buraya gelecek
 		stopToBroadcast <- true
 	})
 

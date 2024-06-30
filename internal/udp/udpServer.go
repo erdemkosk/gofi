@@ -40,6 +40,7 @@ func (server *UdpServer) CloseConnection() {
 }
 
 func (server *UdpServer) Listen(messages chan<- string) error {
+
 	message := []byte("Hey I am server ı know u client.")
 
 	for {
