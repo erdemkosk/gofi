@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"time"
 
 	"github.com/erdemkosk/gofi/internal"
 	"github.com/erdemkosk/gofi/internal/logic"
@@ -49,8 +50,7 @@ func (client *UdpClient) CloseConnection() {
 	log.Println("UDP Client closed successfully!")
 }
 
-func (client *UdpClient) SendBroadcastMessage() {
-
+func (client *UdpClient) SendBroadcastMessage(stop chan bool) {
 	client.Logs <- "C : >>>Ready to send broadcast packets! (Client)"
 
 	message := UdpMessage{IP: logic.GetLocalIP(), Port: internal.TCP_PORT, Name: logic.GetHostName()}
@@ -60,21 +60,33 @@ func (client *UdpClient) SendBroadcastMessage() {
 		return
 	}
 
-	_, err = client.Connection.Write(messageBytes)
-	client.Logs <- "C : >>>Client send message (Client)"
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
 
-	if err != nil {
-		log.Println(err)
-	}
+	for {
+		select {
+		case <-ticker.C:
+			_, err := client.Connection.Write(messageBytes)
+			client.Logs <- "C : >>>Client sent message (Client)"
 
-	// Receive response from server
-	buf := make([]byte, 15000)
-	amountByte, remAddr, err := client.Connection.ReadFromUDP(buf)
+			if err != nil {
+				log.Println(err)
+			}
 
-	if err != nil {
-		log.Println(err)
-	} else {
-		client.Logs <- fmt.Sprintf("%d bytes received from %s", amountByte, remAddr.String())
-		client.Logs <- ("C : >>>Packet received; data: " + string(buf))
+			// Receive response from server
+			buf := make([]byte, 15000)
+			amountByte, remAddr, err := client.Connection.ReadFromUDP(buf)
+
+			if err != nil {
+				log.Println(err)
+			} else {
+				client.Logs <- fmt.Sprintf("%d bytes received from %s", amountByte, remAddr.String())
+				client.Logs <- ("C : >>>Packet received; data: " + string(buf))
+			}
+
+		case <-stop:
+			client.Logs <- "C : >>>Stopping broadcast"
+			return
+		}
 	}
 }

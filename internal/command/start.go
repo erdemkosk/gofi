@@ -2,6 +2,7 @@ package command
 
 import (
 	"fmt"
+	"time"
 
 	config "github.com/erdemkosk/gofi/internal"
 	"github.com/erdemkosk/gofi/internal/udp"
@@ -14,30 +15,34 @@ import (
 type StartCommand struct {
 }
 
-func (command StartCommand) Execute(cmd *cobra.Command, args []string) {
-	app := tview.NewApplication()
+var logChannel chan string
+var app *tview.Application
+var stopToBroadcast chan bool // It will control udp client broadcast message
 
-	logs := make(chan string)
+func (command StartCommand) Execute(cmd *cobra.Command, args []string) {
+	app = tview.NewApplication()
+
+	logChannel = make(chan string)
 	logsBox, mainFlex, dropdown := generateUI()
 
 	// Logları dinleyip UI'yi güncelle
-	go listenForLogs(logs, logsBox)
+	go listenForLogs(logChannel, logsBox)
 
-	server, serverErr := udp.CreateNewUdpServer(config.UDP_SERVER_BROADCAST_IP, config.UDP_PORT, logs)
+	server, serverErr := udp.CreateNewUdpServer(config.UDP_SERVER_BROADCAST_IP, config.UDP_PORT, logChannel)
 	if serverErr != nil {
 		fmt.Println("Server error:", serverErr)
 		return
 	}
 	defer server.CloseConnection()
 
-	client, clientErr := udp.CreateNewUdpClient(config.UDP_CLIENT_BROADCAST_IP, config.UDP_PORT, logs)
+	client, clientErr := udp.CreateNewUdpClient(config.UDP_CLIENT_BROADCAST_IP, config.UDP_PORT, logChannel)
 	if clientErr != nil {
 		fmt.Println("Client error:", clientErr)
 		return
 	}
 	defer client.CloseConnection()
 
-	go client.SendBroadcastMessage()
+	go client.SendBroadcastMessage(stopToBroadcast)
 
 	messages := make(chan string)
 
@@ -53,9 +58,9 @@ func (command StartCommand) Execute(cmd *cobra.Command, args []string) {
 
 func listenForLogs(logs <-chan string, textView *tview.TextView) {
 	for log := range logs {
+		time.Sleep(1 * time.Second)
 		currentText := textView.GetText(false)
 		textView.SetText(currentText + "\n" + log)
-
 	}
 }
 
@@ -82,6 +87,7 @@ func generateUI() (*tview.TextView, *tview.Flex, *tview.DropDown) {
 	button := tview.NewButton("Click me")
 	button.SetSelectedFunc(func() {
 		// Buton işlevselliği buraya gelecek
+		stopToBroadcast <- true
 	})
 
 	// Sol tarafta grid oluşturma (gauge, dropdown, button)
@@ -99,6 +105,9 @@ func generateUI() (*tview.TextView, *tview.Flex, *tview.DropDown) {
 	logBox.SetTitle("Logs")
 	logBox.SetTextAlign(tview.AlignLeft)
 	logBox.SetDynamicColors(true)
+	logBox.SetChangedFunc(func() {
+		app.Draw()
+	})
 
 	// Flex layout oluşturma
 	flex := tview.NewFlex().
