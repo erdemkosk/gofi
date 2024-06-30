@@ -1,10 +1,12 @@
 package command
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
 	config "github.com/erdemkosk/gofi/internal"
+	"github.com/erdemkosk/gofi/internal/logic"
 	"github.com/erdemkosk/gofi/internal/udp"
 	"github.com/gdamore/tcell/v2"
 	"github.com/navidys/tvxwidgets"
@@ -18,6 +20,7 @@ type StartCommand struct {
 var logChannel chan string
 var app *tview.Application
 var stopToBroadcast chan bool // It will control udp client broadcast message
+var connectionList []string
 
 func (command StartCommand) Execute(cmd *cobra.Command, args []string) {
 	app = tview.NewApplication()
@@ -67,8 +70,27 @@ func listenForLogs(logs <-chan string, textView *tview.TextView) {
 
 func listenForMessages(messages <-chan string, dropdown *tview.DropDown) {
 	for message := range messages {
-		dropdown.SetOptions([]string{message}, nil)
+
+		messageTrim := logic.TrimNullBytes([]byte(message))
+
+		var msg udp.UdpMessage
+		err := json.Unmarshal([]byte(messageTrim), &msg)
+		if err != nil {
+			logChannel <- fmt.Sprintf("Error unmarshaling JSON: %v %s", err, message)
+			continue
+		}
+
+		if msg.IP == logic.GetLocalIP() {
+			logChannel <- fmt.Sprintf("%s is current package so ignore it !", message)
+			continue
+		}
+
+		if !logic.Contains(connectionList, message) {
+			connectionList = append(connectionList, message)
+			dropdown.SetOptions(connectionList, nil)
+		}
 	}
+
 }
 
 func generateUI() (*tview.TextView, *tview.Flex, *tview.DropDown) {
@@ -81,7 +103,7 @@ func generateUI() (*tview.TextView, *tview.Flex, *tview.DropDown) {
 
 	// Dropdown oluşturma
 	dropdown := tview.NewDropDown()
-	dropdown.SetLabel("Select an option: ")
+	dropdown.SetLabel("Select an connection: ")
 	dropdown.SetOptions([]string{"Option 1", "Option 2", "Option 3"}, nil)
 
 	// Buton oluşturma
@@ -105,6 +127,7 @@ func generateUI() (*tview.TextView, *tview.Flex, *tview.DropDown) {
 	logBox.SetTitle("Logs")
 	logBox.SetTextAlign(tview.AlignLeft)
 	logBox.SetDynamicColors(true)
+	logBox.SetScrollable(true)
 	logBox.SetChangedFunc(func() {
 		app.Draw()
 	})

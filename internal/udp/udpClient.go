@@ -19,9 +19,9 @@ type UdpClient struct {
 }
 
 type UdpMessage struct {
-	IP   string
-	Port int32
-	Name string
+	IP   string `json:"ip"`
+	Port int    `json:"port"`
+	Name string `json:"name"`
 }
 
 func CreateNewUdpClient(ip string, port int, logs chan string) (*UdpClient, error) {
