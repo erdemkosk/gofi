@@ -1,18 +1,29 @@
 package udp
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
+
+	"github.com/erdemkosk/gofi/internal"
+	"github.com/erdemkosk/gofi/internal/logic"
 )
 
 type UdpClient struct {
 	Address     net.UDPAddr
 	Connection  *net.UDPConn
 	IsConnected bool
+	Logs        chan string
 }
 
-func CreateNewUdpClient(ip string, port int) (*UdpClient, error) {
+type UdpMessage struct {
+	IP   string
+	Port int32
+	Name string
+}
+
+func CreateNewUdpClient(ip string, port int, logs chan string) (*UdpClient, error) {
 	udpAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", ip, port))
 	if err != nil {
 		return nil, err
@@ -23,9 +34,9 @@ func CreateNewUdpClient(ip string, port int) (*UdpClient, error) {
 		return nil, err
 	}
 
-	log.Println("UDP Client connected successfully")
+	logs <- "UDP Client connected successfully"
 
-	return &UdpClient{Connection: conn, Address: *udpAddr, IsConnected: true}, nil
+	return &UdpClient{Connection: conn, Address: *udpAddr, IsConnected: true, Logs: logs}, nil
 }
 
 func (client *UdpClient) CloseConnection() {
@@ -40,12 +51,17 @@ func (client *UdpClient) CloseConnection() {
 
 func (client *UdpClient) SendBroadcastMessage() {
 
-	fmt.Println("C : >>>Ready to send broadcast packets! (Client)")
+	client.Logs <- "C : >>>Ready to send broadcast packets! (Client)"
 
-	message := []byte("Hello server I am client")
+	message := UdpMessage{IP: logic.GetLocalIP(), Port: internal.TCP_PORT, Name: logic.GetHostName()}
+	messageBytes, err := json.Marshal(message)
+	if err != nil {
+		client.Logs <- fmt.Sprintf("Error marshaling message: %v", err)
+		return
+	}
 
-	_, err := client.Connection.Write(message)
-	fmt.Println("C : >>>Client send message (Client)")
+	_, err = client.Connection.Write(messageBytes)
+	client.Logs <- "C : >>>Client send message (Client)"
 
 	if err != nil {
 		log.Println(err)
@@ -58,7 +74,7 @@ func (client *UdpClient) SendBroadcastMessage() {
 	if err != nil {
 		log.Println(err)
 	} else {
-		fmt.Println(amountByte, "bytes received from", remAddr)
-		fmt.Println("C : >>>Packet received; data: " + string(buf))
+		client.Logs <- fmt.Sprintf("%d bytes received from %s", amountByte, remAddr.String())
+		client.Logs <- ("C : >>>Packet received; data: " + string(buf))
 	}
 }

@@ -10,9 +10,10 @@ type UdpServer struct {
 	Address     net.UDPAddr
 	Connection  *net.UDPConn
 	IsConnected bool
+	Logs        chan string
 }
 
-func CreateNewUdpServer(ip string, port int) (*UdpServer, error) {
+func CreateNewUdpServer(ip string, port int, logs chan string) (*UdpServer, error) {
 	udpAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", ip, port))
 	if err != nil {
 		return nil, err
@@ -23,9 +24,9 @@ func CreateNewUdpServer(ip string, port int) (*UdpServer, error) {
 		return nil, err
 	}
 
-	log.Println("UDP Server created successfully!")
+	logs <- "UDP Server created successfully!"
 
-	return &UdpServer{Connection: conn, Address: *udpAddr, IsConnected: true}, nil
+	return &UdpServer{Connection: conn, Address: *udpAddr, IsConnected: true, Logs: logs}, nil
 }
 
 func (server *UdpServer) CloseConnection() {
@@ -35,30 +36,30 @@ func (server *UdpServer) CloseConnection() {
 	}
 
 	server.IsConnected = false
-	log.Println("UDP Server closed successfully!")
+	server.Logs <- "UDP Server closed successfully!"
 }
 
-func (server *UdpServer) Listen() error {
+func (server *UdpServer) Listen(messages chan<- string) error {
 	message := []byte("Hey I am server ı know u client.")
 
 	for {
-		fmt.Println("S : >>>Ready to receive broadcast packets! (Server)")
+		server.Logs <- "Ready to receive broadcast packets! (Server)"
 
 		// Receiving a message
 		recvBuff := make([]byte, 15000)
 		_, rmAddr, err := server.Connection.ReadFromUDP(recvBuff)
-
 		if err != nil {
-			panic(err)
+			return err
 		}
 
-		fmt.Println("S : >>>Discovery packet received from: " + rmAddr.String())
-		fmt.Println("S : >>>Packet received; data: " + string(recvBuff))
+		server.Logs <- "Discovery packet received from: " + rmAddr.String()
+		server.Logs <- "Packet received; data: " + string(recvBuff)
 
 		// Sending the same message back to current client
 		server.Connection.WriteToUDP(message, rmAddr)
 
-		fmt.Println("S : >>>Sent packet to: " + rmAddr.String())
-	}
+		messages <- string(recvBuff)
 
+		server.Logs <- "Sent packet to: " + rmAddr.String()
+	}
 }
