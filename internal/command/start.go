@@ -3,6 +3,9 @@ package command
 import (
 	"encoding/json"
 	"fmt"
+	"log"
+	"os"
+	"path/filepath"
 	"time"
 
 	config "github.com/erdemkosk/gofi/internal"
@@ -21,16 +24,23 @@ var logChannel chan string
 var app *tview.Application
 var stopToBroadcast chan bool // It will control udp client broadcast message
 var connectionList []string
+var grid *tview.Grid
+var desktopPath string
+var selectedNodes map[*tview.TreeNode]bool
 
 func (command StartCommand) Execute(cmd *cobra.Command, args []string) {
+	desktopPath = GetEnvolveHomePath()
 	app = tview.NewApplication()
 
 	logChannel = make(chan string)
 	stopToBroadcast = make(chan bool)
-	logsBox, mainFlex, dropdown := generateUI()
+	messagesFromClients := make(chan string)
+	selectedNodes = make(map[*tview.TreeNode]bool)
 
-	// Logları dinleyip UI'yi güncelle
+	mainFlex, logsBox, serverListDropdown := generateUI()
+
 	go listenForLogs(logChannel, logsBox)
+	go updateDropdownWithUdpClientMessages(messagesFromClients, serverListDropdown)
 
 	server, serverErr := udp.CreateNewUdpServer(config.UDP_SERVER_BROADCAST_IP, config.UDP_PORT, logChannel)
 	if serverErr != nil {
@@ -48,11 +58,7 @@ func (command StartCommand) Execute(cmd *cobra.Command, args []string) {
 
 	go client.SendBroadcastMessage(stopToBroadcast, logChannel)
 
-	messages := make(chan string)
-
-	go server.Listen(messages)
-
-	go listenForMessages(messages, dropdown)
+	go server.Listen(messagesFromClients)
 
 	// Flex layout'u uygulamaya kök olarak ayarla
 	if err := app.SetRoot(mainFlex, true).EnableMouse(true).Run(); err != nil {
@@ -68,7 +74,7 @@ func listenForLogs(logs <-chan string, textView *tview.TextView) {
 	}
 }
 
-func listenForMessages(messages <-chan string, dropdown *tview.DropDown) {
+func updateDropdownWithUdpClientMessages(messages <-chan string, dropdown *tview.DropDown) {
 	for message := range messages {
 
 		messageTrim := logic.TrimNullBytes([]byte(message))
@@ -93,7 +99,46 @@ func listenForMessages(messages <-chan string, dropdown *tview.DropDown) {
 
 }
 
-func generateUI() (*tview.TextView, *tview.Flex, *tview.DropDown) {
+func GetEnvolveHomePath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, "/Desktop")
+}
+
+func contains(names []string, name string) bool {
+	for _, n := range names {
+		if n == name {
+			return true
+		}
+	}
+	return false
+}
+
+func ReadDir(path string, excludeNames []string) ([]os.FileInfo, error) {
+	files, err := os.ReadDir(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var filteredFiles []os.DirEntry
+	for _, file := range files {
+		if !contains(excludeNames, file.Name()) {
+			filteredFiles = append(filteredFiles, file)
+		}
+	}
+
+	var fileInfos []os.FileInfo
+	for _, file := range filteredFiles {
+		info, err := file.Info()
+		if err != nil {
+			return nil, err
+		}
+		fileInfos = append(fileInfos, info)
+	}
+
+	return fileInfos, nil
+}
+
+func generateUI() (*tview.Flex, *tview.TextView, *tview.DropDown) {
 	// Gauge oluşturma
 	gauge := tvxwidgets.NewActivityModeGauge()
 	gauge.SetTitle("searching peers")
@@ -104,16 +149,59 @@ func generateUI() (*tview.TextView, *tview.Flex, *tview.DropDown) {
 	// Dropdown oluşturma
 	dropdown := tview.NewDropDown()
 	dropdown.SetLabel("Select an connection: ")
-	dropdown.SetOptions([]string{"Option 1", "Option 2", "Option 3"}, nil)
+	dropdown.SetOptions([]string{}, nil)
 
 	// Buton oluşturma
 	button := tview.NewButton("Click me")
 	button.SetSelectedFunc(func() {
 		stopToBroadcast <- true
+		grid.Clear()
+		tree := tview.NewTreeView().
+			SetRoot(tview.NewTreeNode(desktopPath).SetColor(tcell.ColorLightGray)).
+			SetCurrentNode(tview.NewTreeNode(desktopPath).SetColor(tcell.ColorDarkSlateBlue))
+
+		tree.SetTitle("Envs").SetBorder(true)
+		// Soldaki grid'i temizle ve tree'yi tam olarak ekle
+		grid.SetRows(0). // Tek bir satır ayarla, böylece tamamını kaplar
+					SetColumns(0).                        // Tek bir sütun ayarla, böylece tamamını kaplar
+					AddItem(tree, 0, 0, 1, 1, 0, 0, true) // Tree'yi tamamını kaplayacak şekilde ekle
+
+		tree.SetSelectedFunc(func(node *tview.TreeNode) {
+			if selectedNodes[node] {
+				node.SetColor(tcell.ColorLightGray) // Eğer düğüm zaten seçiliyse rengini eski haline döndür
+				delete(selectedNodes, node)         // Düğümü seçili düğümler listesinden çıkar
+			} else {
+				node.SetColor(tcell.ColorYellow) // Eğer düğüm seçili değilse rengini değiştir
+				selectedNodes[node] = true       // Düğümü seçili düğümler listesine ekle
+			}
+		})
+
+		addNodes := func(target *tview.TreeNode, path string) {
+			files, err := ReadDir(path, []string{".DS_Store"})
+			if err != nil {
+				log.Fatalf("Cannot read directory: %v", err)
+			}
+
+			for _, file := range files {
+				node := tview.NewTreeNode(file.Name()).
+					SetReference(filepath.Join(path, file.Name()))
+				if file.IsDir() {
+					node.SetColor(tcell.ColorLightGray)
+					node.SetSelectable(true)
+					node.SetExpanded(false)
+				} else {
+					node.SetColor(tcell.ColorLightGray)
+					node.SetSelectable(true)
+				}
+				target.AddChild(node)
+			}
+		}
+
+		addNodes(tree.GetRoot(), desktopPath)
 	})
 
 	// Sol tarafta grid oluşturma (gauge, dropdown, button)
-	leftGrid := tview.NewGrid().
+	grid = tview.NewGrid().
 		SetRows(3, 3, 3). // Üç satır ayarla
 		SetColumns(0).    // Tek bir sütun ayarla
 		SetBorders(true).
@@ -134,8 +222,8 @@ func generateUI() (*tview.TextView, *tview.Flex, *tview.DropDown) {
 
 	// Flex layout oluşturma
 	flex := tview.NewFlex().
-		AddItem(leftGrid, 0, 1, false). // Sol taraftaki grid, %50 kaplasın
-		AddItem(logBox, 0, 1, false)    // Sağ taraftaki log alanı, %50 kaplasın
+		AddItem(grid, 0, 1, false).  // Sol taraftaki grid, %50 kaplasın
+		AddItem(logBox, 0, 1, false) // Sağ taraftaki log alanı, %50 kaplasın
 
 	// ASCII sanat eseri için TextView oluşturma
 	iconBox := tview.NewTextView().
@@ -148,5 +236,5 @@ func generateUI() (*tview.TextView, *tview.Flex, *tview.DropDown) {
 		AddItem(iconBox, 0, 1, true). // ASCII sanat eseri alanı ekranın tamamına yayılsın
 		AddItem(flex, 0, 3, true)     // Diğer alanlar aşağıda yer alsın
 
-	return logBox, mainFlex, dropdown
+	return mainFlex, logBox, dropdown
 }

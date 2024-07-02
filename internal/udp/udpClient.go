@@ -61,7 +61,7 @@ func (client *UdpClient) SendBroadcastMessage(stop chan bool, logs chan<- string
 		return
 	}
 
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(3 * time.Second)
 
 	for {
 		select {
