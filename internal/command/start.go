@@ -21,11 +21,11 @@ type StartCommand struct {
 
 var logChannel chan string
 var app *tview.Application
-var stopToBroadcast chan bool // It will control udp client broadcast message
+var stopToBroadcast chan bool
 var connectionList []string
 var grid *tview.Grid
 var desktopPath string
-var selectedNodes map[*tview.TreeNode]bool
+var selectedNodes map[string]bool // Store node paths instead of pointers
 var parentMap map[*tview.TreeNode]*tview.TreeNode
 var pathBox *tview.TextView
 
@@ -36,7 +36,7 @@ func (command StartCommand) Execute(cmd *cobra.Command, args []string) {
 	logChannel = make(chan string)
 	stopToBroadcast = make(chan bool)
 	messagesFromClients := make(chan string)
-	selectedNodes = make(map[*tview.TreeNode]bool)
+	selectedNodes = make(map[string]bool)
 	parentMap = make(map[*tview.TreeNode]*tview.TreeNode)
 
 	mainFlex, logsBox, serverListDropdown := generateUI()
@@ -69,7 +69,6 @@ func (command StartCommand) Execute(cmd *cobra.Command, args []string) {
 
 func listenForLogs(logs <-chan string, textView *tview.TextView) {
 	for log := range logs {
-		//time.Sleep(1 * time.Second)
 		currentText := textView.GetText(false)
 		textView.SetText(currentText + "\n" + log)
 	}
@@ -77,7 +76,6 @@ func listenForLogs(logs <-chan string, textView *tview.TextView) {
 
 func updateDropdownWithUdpClientMessages(messages <-chan string, dropdown *tview.DropDown) {
 	for message := range messages {
-
 		messageTrim := logic.TrimNullBytes([]byte(message))
 
 		var msg udp.UdpMessage
@@ -97,7 +95,6 @@ func updateDropdownWithUdpClientMessages(messages <-chan string, dropdown *tview
 			dropdown.SetOptions(connectionList, nil)
 		}
 	}
-
 }
 
 func GetEnvolveHomePath() string {
@@ -142,61 +139,50 @@ func generateUI() (*tview.Flex, *tview.TextView, *tview.DropDown) {
 	dropdown.SetOptions([]string{}, nil)
 
 	pathBox = tview.NewTextView()
-
 	pathBox.SetText(desktopPath).
 		SetDynamicColors(true).
 		SetTextAlign(tview.AlignLeft).
 		SetBorder(true).
 		SetTitle("Current Path")
 
-	// addNodes işlevini dışarıda tanımlayın
 	var addNodes func(target *tview.TreeNode, path string)
-	// Inside the addNodes function
 	addNodes = func(target *tview.TreeNode, path string) {
-		// Clear existing children
 		target.ClearChildren()
-
-		// Show a loading message while loading nodes
 		target.SetText("Loading...")
 
-		// Start a new goroutine for file reading
 		go func() {
 			files, err := ReadDir(path, []string{".DS_Store"})
 			if err != nil {
 				log.Printf("Cannot read directory: %v", err)
-				// Handle error or update UI accordingly
 				return
 			}
 
-			// Update UI in the main goroutine
 			app.QueueUpdateDraw(func() {
 				target.ClearChildren()
 				for _, file := range files {
 					node := tview.NewTreeNode(file.Name())
 					node.SetReference(filepath.Join(path, file.Name()))
 
+					nodePath := filepath.Join(path, file.Name())
+					if selectedNodes[nodePath] {
+						node.SetColor(tcell.ColorYellow)
+					} else {
+						node.SetColor(tcell.ColorLightGray)
+					}
+
 					if file.IsDir() {
-						node.SetColor(tcell.ColorLightGray).
-							SetSelectable(true).
-							SetExpanded(false) // Initially not expanded
-						// Append "(F)" to folder nodes
+						node.SetSelectable(true).
+							SetExpanded(false)
 						node.SetText(file.Name() + " (F)")
 					} else {
-						node.SetColor(tcell.ColorLightGray).
-							SetSelectable(true)
+						node.SetSelectable(true)
 					}
 
 					target.AddChild(node)
 					parentMap[node] = target
-
-					// Check if the node is selected
-					if selectedNodes[node] {
-						node.SetColor(tcell.ColorYellow)
-					}
 				}
 
-				// Update text to remove "Loading..." after loading
-				target.SetText(path) // Set to folder name without "Loading..."
+				target.SetText(path)
 			})
 		}()
 	}
@@ -210,10 +196,10 @@ func generateUI() (*tview.Flex, *tview.TextView, *tview.DropDown) {
 			SetCurrentNode(tview.NewTreeNode(filepath.Base(desktopPath)).SetColor(tcell.ColorDarkSlateBlue))
 
 		tree.SetTitle("Envs").SetBorder(true)
-		grid.SetRows(3, 0). // Tek bir satır ayarla, böylece tamamını kaplar
-					SetColumns(0). // Tek bir sütun ayarla, böylece tamamını kaplar
-					AddItem(pathBox, 0, 0, 1, 1, 0, 0, true).
-					AddItem(tree, 1, 0, 1, 1, 0, 0, true) // Tree'yi tamamını kaplayacak şekilde ekle
+		grid.SetRows(3, 0).
+			SetColumns(0).
+			AddItem(pathBox, 0, 0, 1, 1, 0, 0, true).
+			AddItem(tree, 1, 0, 1, 1, 0, 0, true)
 
 		tree.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 			if event.Key() == tcell.KeyRune && event.Rune() == ' ' {
@@ -225,12 +211,13 @@ func generateUI() (*tview.Flex, *tview.TextView, *tview.DropDown) {
 				return nil
 			} else if event.Key() == tcell.KeyEnter {
 				node := tree.GetCurrentNode()
-				if selectedNodes[node] {
+				nodePath := node.GetReference().(string)
+				if selectedNodes[nodePath] {
 					node.SetColor(tcell.ColorLightGray)
-					delete(selectedNodes, node)
+					delete(selectedNodes, nodePath)
 				} else {
 					node.SetColor(tcell.ColorYellow)
-					selectedNodes[node] = true
+					selectedNodes[nodePath] = true
 				}
 				return nil
 			} else if event.Key() == tcell.KeyBackspace2 || event.Key() == tcell.KeyBackspace {
@@ -258,28 +245,12 @@ func generateUI() (*tview.Flex, *tview.TextView, *tview.DropDown) {
 				if currentNode != nil {
 					currentPath := pathBox.GetText(true)
 					parentPath := filepath.Dir(currentPath)
-					if parentPath != currentPath { // Root dizinine ulaşıldığında dur
+					if parentPath != currentPath {
 						pathBox.SetText(parentPath)
 
 						root := tview.NewTreeNode(filepath.Base(parentPath)).SetColor(tcell.ColorLightGray)
 						tree.SetRoot(root).SetCurrentNode(root)
 						addNodes(root, parentPath)
-					} else {
-						// Ağacın en üst düğümünde olduğumuzu doğrulayın
-						if tree.GetRoot() == currentNode {
-							// Ağacın dışına çıkmak istediğimizde, bu durumu ele alın
-							// Burada ağacın dışına çıkma işlemini gerçekleştirebilirsiniz
-							// Örneğin, mevcut dizin bir üst dizine gitmek istiyorsanız:
-							currentPath := currentNode.GetReference().(string)
-							parentPath := filepath.Dir(currentPath)
-							if parentPath != currentPath {
-								pathBox.SetText(parentPath)
-
-								root := tview.NewTreeNode(filepath.Base(parentPath)).SetColor(tcell.ColorLightGray)
-								tree.SetRoot(root).SetCurrentNode(root)
-								addNodes(root, parentPath)
-							}
-						}
 					}
 				}
 				return nil
@@ -304,7 +275,6 @@ func generateUI() (*tview.Flex, *tview.TextView, *tview.DropDown) {
 				}
 
 				if !fileInfo.IsDir() {
-					// Klasör değilse işlemi durdur
 					return nil
 				}
 
