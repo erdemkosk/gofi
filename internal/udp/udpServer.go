@@ -24,7 +24,7 @@ func CreateNewUdpServer(ip string, port int, logs chan string) (*UdpServer, erro
 		return nil, err
 	}
 
-	logs <- "UDP Server created successfully!"
+	logs <- "--> UDP SERVER created successfully!"
 
 	return &UdpServer{Connection: conn, Address: *udpAddr, IsConnected: true, Logs: logs}, nil
 }
@@ -32,18 +32,18 @@ func CreateNewUdpServer(ip string, port int, logs chan string) (*UdpServer, erro
 func (server *UdpServer) CloseConnection() {
 	err := server.Connection.Close()
 	if err != nil {
-		log.Fatalln("UDP Server cannot be closed!")
+		log.Fatalln("--> UDP SERVER cannot be closed!")
 	}
 
 	server.IsConnected = false
-	server.Logs <- "UDP Server closed successfully!"
+	server.Logs <- "--> UDP SERVER closed successfully!"
 }
 
 func (server *UdpServer) Listen(stop chan bool, messages chan<- string) error {
 	message := []byte("Hey I am server ı know u client.")
 
 	for {
-		server.Logs <- "Ready to receive broadcast packets! (Server)"
+		server.Logs <- "--> UDP SERVER Ready to receive broadcast packets!"
 
 		recvBuff := make([]byte, 15000)
 		_, rmAddr, err := server.Connection.ReadFromUDP(recvBuff)
@@ -51,19 +51,19 @@ func (server *UdpServer) Listen(stop chan bool, messages chan<- string) error {
 			return err
 		}
 
-		server.Logs <- "Discovery packet received from: " + rmAddr.String()
-		server.Logs <- "Packet received; data: " + string(recvBuff)
+		server.Logs <- "--> UDP SERVER Discovery packet received from: " + rmAddr.String()
+		server.Logs <- "--> UDP SERVER Packet received; data: " + string(recvBuff)
 
 		// Sending the same message back to current client
 		server.Connection.WriteToUDP(message, rmAddr)
 
 		messages <- string(recvBuff)
 
-		server.Logs <- "Sent packet to: " + rmAddr.String()
+		server.Logs <- "--> UDP SERVER Sent packet to: " + rmAddr.String()
 
 		select {
 		case <-stop:
-			server.Logs <- "Stopping broadcast on server"
+			server.Logs <- "--> UDP SERVER Stopping"
 			server.CloseConnection()
 			return nil
 		}

@@ -7,7 +7,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/erdemkosk/gofi/internal"
+	config "github.com/erdemkosk/gofi/internal"
 	"github.com/erdemkosk/gofi/internal/logic"
 )
 
@@ -35,7 +35,7 @@ func CreateNewUdpClient(ip string, port int, logs chan string) (*UdpClient, erro
 		return nil, err
 	}
 
-	logs <- "UDP Client connected successfully"
+	logs <- "--> UDP CLIENT connected successfully"
 
 	return &UdpClient{Connection: conn, Address: *udpAddr, IsConnected: true, Logs: logs}, nil
 }
@@ -43,34 +43,34 @@ func CreateNewUdpClient(ip string, port int, logs chan string) (*UdpClient, erro
 func (client *UdpClient) CloseConnection() {
 	err := client.Connection.Close()
 	if err != nil {
-		log.Fatalln("UDP Client cannot be closed!")
+		log.Fatalln("--> UDP Client cannot be closed!")
 	}
 
 	client.IsConnected = false
-	client.Logs <- "UDP Client closed successfully!"
+	client.Logs <- "--> UDP CLIENT closed successfully!"
 }
 
 func (client *UdpClient) SendBroadcastMessage(stop chan bool) {
-	client.Logs <- "C : >>>Ready to send broadcast packets! (Client)"
+	client.Logs <- "--> UDP CLIENT ready to send broadcast packets!"
 
-	message := UdpMessage{IP: logic.GetLocalIP(), Port: internal.TCP_PORT, Name: logic.GetHostName()}
+	message := UdpMessage{IP: logic.GetLocalIP(), Port: config.TCP_PORT, Name: logic.GetHostName()}
 	messageBytes, err := json.Marshal(message)
 	if err != nil {
 		client.Logs <- fmt.Sprintf("Error marshaling message: %v", err)
 		return
 	}
 
-	ticker := time.NewTicker(3 * time.Second)
+	ticker := time.NewTicker(config.UDP_CLIENT_BROADCAST_INTERVAL)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
 			_, err := client.Connection.Write(messageBytes)
-			client.Logs <- "C : >>>Client sent message (Client)"
+			client.Logs <- "--> UDP CLIENT  sended broadcast message to everyone who is interested"
 
 			if err != nil {
-				client.Logs <- fmt.Sprintf("Error sending message: %v", err)
+				client.Logs <- fmt.Sprintf("--> UDP CLIENT Error sending message: %v", err)
 			}
 
 			// Receive response from server
@@ -81,15 +81,15 @@ func (client *UdpClient) SendBroadcastMessage(stop chan bool) {
 			if err != nil {
 				netErr, ok := err.(net.Error)
 				if !ok || !netErr.Timeout() {
-					client.Logs <- fmt.Sprintf("Error receiving response: %v", err)
+					client.Logs <- fmt.Sprintf("--> UDP CLIENT Error receiving response: %v", err)
 				}
 			} else {
 				client.Logs <- fmt.Sprintf("%d bytes received from %s", amountByte, remAddr.String())
-				client.Logs <- ("C : >>>Packet received; data: " + string(buf))
+				client.Logs <- ("--> UDP CLIENT Packet received; data: " + string(buf))
 			}
 
 		case <-stop:
-			client.Logs <- "C : >>>Stopping broadcast on client"
+			client.Logs <- "--> UDP CLIENT Stopping"
 			ticker.Stop()
 			client.CloseConnection()
 			return
