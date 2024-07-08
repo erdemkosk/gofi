@@ -173,7 +173,7 @@ func generateUI() (*tview.Flex, *tview.TextView, *tview.DropDown) {
 					if file.IsDir() {
 						node.SetSelectable(true).
 							SetExpanded(false)
-						node.SetText(file.Name() + " (F)")
+						node.SetText(file.Name() + "/")
 					} else {
 						node.SetSelectable(true)
 					}
@@ -187,7 +187,7 @@ func generateUI() (*tview.Flex, *tview.TextView, *tview.DropDown) {
 		}()
 	}
 
-	button := tview.NewButton("Click me")
+	button := tview.NewButton("Connect")
 	button.SetSelectedFunc(func() {
 		stopToBroadcast <- true
 		grid.Clear()
@@ -195,7 +195,7 @@ func generateUI() (*tview.Flex, *tview.TextView, *tview.DropDown) {
 			SetRoot(tview.NewTreeNode(filepath.Base(desktopPath)).SetColor(tcell.ColorLightGray)).
 			SetCurrentNode(tview.NewTreeNode(filepath.Base(desktopPath)).SetColor(tcell.ColorDarkSlateBlue))
 
-		tree.SetTitle("Envs").SetBorder(true)
+		tree.SetTitle("Finder").SetBorder(true)
 		grid.SetRows(3, 0).
 			SetColumns(0).
 			AddItem(pathBox, 0, 0, 1, 1, 0, 0, true).
@@ -220,41 +220,7 @@ func generateUI() (*tview.Flex, *tview.TextView, *tview.DropDown) {
 					selectedNodes[nodePath] = true
 				}
 				return nil
-			} else if event.Key() == tcell.KeyBackspace2 || event.Key() == tcell.KeyBackspace {
-				currentNode := tree.GetCurrentNode()
-				if currentNode == tree.GetRoot() {
-					return event
-				}
-				parentNode := parentMap[currentNode]
-				tree.SetCurrentNode(parentNode)
-				return nil
 			} else if event.Key() == tcell.KeyRight {
-				node := tree.GetCurrentNode()
-				if len(node.GetChildren()) > 0 {
-					tree.SetCurrentNode(node.GetChildren()[0])
-				}
-				return nil
-			} else if event.Key() == tcell.KeyLeft {
-				node := tree.GetCurrentNode()
-				if node != tree.GetRoot() {
-					tree.SetCurrentNode(parentMap[node])
-				}
-				return nil
-			} else if event.Key() == tcell.KeyUp {
-				currentNode := tree.GetCurrentNode()
-				if currentNode != nil {
-					currentPath := pathBox.GetText(true)
-					parentPath := filepath.Dir(currentPath)
-					if parentPath != currentPath {
-						pathBox.SetText(parentPath)
-
-						root := tview.NewTreeNode(filepath.Base(parentPath)).SetColor(tcell.ColorLightGray)
-						tree.SetRoot(root).SetCurrentNode(root)
-						addNodes(root, parentPath)
-					}
-				}
-				return nil
-			} else if event.Key() == tcell.KeyDown {
 				node := tree.GetCurrentNode()
 
 				if node == nil {
@@ -285,11 +251,26 @@ func generateUI() (*tview.Flex, *tview.TextView, *tview.DropDown) {
 				addNodes(root, childPath)
 
 				return nil
+			} else if event.Key() == tcell.KeyLeft {
+				currentNode := tree.GetCurrentNode()
+				if currentNode != nil {
+					currentPath := pathBox.GetText(true)
+					parentPath := filepath.Dir(currentPath)
+					if parentPath != currentPath {
+						pathBox.SetText(parentPath)
+
+						root := tview.NewTreeNode(filepath.Base(parentPath)).SetColor(tcell.ColorLightGray)
+						tree.SetRoot(root).SetCurrentNode(root)
+						addNodes(root, parentPath)
+					}
+				}
+				return nil
 			}
 			return event
 		})
 
 		addNodes(tree.GetRoot(), desktopPath)
+		app.SetFocus(tree)
 	})
 
 	grid = tview.NewGrid().
