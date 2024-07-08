@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	config "github.com/erdemkosk/gofi/internal"
 	"github.com/erdemkosk/gofi/internal/logic"
@@ -21,7 +22,7 @@ type StartCommand struct {
 
 var logChannel chan string
 var app *tview.Application
-var stopToBroadcast chan bool
+var stopUdpProcessChannel chan bool
 var connectionList []string
 var grid *tview.Grid
 var desktopPath string
@@ -34,7 +35,7 @@ func (command StartCommand) Execute(cmd *cobra.Command, args []string) {
 	app = tview.NewApplication()
 
 	logChannel = make(chan string)
-	stopToBroadcast = make(chan bool)
+	stopUdpProcessChannel = make(chan bool)
 	messagesFromClients := make(chan string)
 	selectedNodes = make(map[string]bool)
 	parentMap = make(map[*tview.TreeNode]*tview.TreeNode)
@@ -42,25 +43,17 @@ func (command StartCommand) Execute(cmd *cobra.Command, args []string) {
 	mainFlex, logsBox, serverListDropdown := generateUI()
 
 	go listenForLogs(logChannel, logsBox)
-	go updateDropdownWithUdpClientMessages(messagesFromClients, serverListDropdown)
 
-	server, serverErr := udp.CreateNewUdpServer(config.UDP_SERVER_BROADCAST_IP, config.UDP_PORT, logChannel)
-	if serverErr != nil {
-		fmt.Println("Server error:", serverErr)
-		return
-	}
+	server, client := CreateUdpPeers()
+
 	defer server.CloseConnection()
-
-	client, clientErr := udp.CreateNewUdpClient(config.UDP_CLIENT_BROADCAST_IP, config.UDP_PORT, logChannel)
-	if clientErr != nil {
-		fmt.Println("Client error:", clientErr)
-		return
-	}
 	defer client.CloseConnection()
 
-	go client.SendBroadcastMessage(stopToBroadcast, logChannel)
+	go client.SendBroadcastMessage(stopUdpProcessChannel)
 
-	go server.Listen(messagesFromClients)
+	go server.Listen(stopUdpProcessChannel, messagesFromClients)
+
+	go updateDropdownWithUdpClientMessages(messagesFromClients, serverListDropdown)
 
 	if err := app.SetRoot(mainFlex, true).EnableMouse(true).Run(); err != nil {
 		panic(err)
@@ -69,9 +62,24 @@ func (command StartCommand) Execute(cmd *cobra.Command, args []string) {
 
 func listenForLogs(logs <-chan string, textView *tview.TextView) {
 	for log := range logs {
-		currentText := textView.GetText(false)
-		textView.SetText(currentText + "\n" + log)
+		textView.SetText(textView.GetText(false) + "\n" + log)
 	}
+}
+
+func CreateUdpPeers() (*udp.UdpServer, *udp.UdpClient) {
+	server, serverErr := udp.CreateNewUdpServer(config.UDP_SERVER_BROADCAST_IP, config.UDP_PORT, logChannel)
+	if serverErr != nil {
+		fmt.Println("Server error:", serverErr)
+		panic("Cannot create UDP Server! ")
+	}
+
+	client, clientErr := udp.CreateNewUdpClient(config.UDP_CLIENT_BROADCAST_IP, config.UDP_PORT, logChannel)
+	if clientErr != nil {
+		fmt.Println("Client error:", clientErr)
+		panic("Cannot create UDP Client! ")
+	}
+
+	return server, client
 }
 
 func updateDropdownWithUdpClientMessages(messages <-chan string, dropdown *tview.DropDown) {
@@ -134,6 +142,18 @@ func generateUI() (*tview.Flex, *tview.TextView, *tview.DropDown) {
 	gauge.SetRect(10, 0, 50, 3)
 	gauge.SetBorder(true)
 
+	update := func() {
+		tick := time.NewTicker(50 * time.Millisecond)
+		for {
+			select {
+			case <-tick.C:
+				gauge.Pulse()
+				app.Draw()
+			}
+		}
+	}
+	go update()
+
 	dropdown := tview.NewDropDown()
 	dropdown.SetLabel("Select an connection: ")
 	dropdown.SetOptions([]string{}, nil)
@@ -189,7 +209,7 @@ func generateUI() (*tview.Flex, *tview.TextView, *tview.DropDown) {
 
 	button := tview.NewButton("Connect")
 	button.SetSelectedFunc(func() {
-		stopToBroadcast <- true
+		close(stopUdpProcessChannel)
 		grid.Clear()
 		tree := tview.NewTreeView().
 			SetRoot(tview.NewTreeNode(filepath.Base(desktopPath)).SetColor(tcell.ColorLightGray)).

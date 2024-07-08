@@ -39,14 +39,12 @@ func (server *UdpServer) CloseConnection() {
 	server.Logs <- "UDP Server closed successfully!"
 }
 
-func (server *UdpServer) Listen(messages chan<- string) error {
-
+func (server *UdpServer) Listen(stop chan bool, messages chan<- string) error {
 	message := []byte("Hey I am server ı know u client.")
 
 	for {
 		server.Logs <- "Ready to receive broadcast packets! (Server)"
 
-		// Receiving a message
 		recvBuff := make([]byte, 15000)
 		_, rmAddr, err := server.Connection.ReadFromUDP(recvBuff)
 		if err != nil {
@@ -62,5 +60,12 @@ func (server *UdpServer) Listen(messages chan<- string) error {
 		messages <- string(recvBuff)
 
 		server.Logs <- "Sent packet to: " + rmAddr.String()
+
+		select {
+		case <-stop:
+			server.Logs <- "Stopping broadcast on server"
+			server.CloseConnection()
+			return nil
+		}
 	}
 }
