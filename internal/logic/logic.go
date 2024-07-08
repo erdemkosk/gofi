@@ -78,8 +78,8 @@ func ReadDir(path string) ([]os.DirEntry, error) {
 }
 
 func GenerateRandomTime() time.Duration {
-	minInterval := 5
-	maxInterval := 10
+	minInterval := 1
+	maxInterval := 6
 	randomInterval := rand.Intn(maxInterval-minInterval+1) + minInterval
 
 	return time.Duration(randomInterval) * time.Second

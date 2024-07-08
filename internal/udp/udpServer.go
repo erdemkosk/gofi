@@ -45,20 +45,23 @@ func (server *UdpServer) Listen(stop chan bool, messages chan<- string) error {
 	for {
 		server.Logs <- "--> UDP SERVER Ready to receive broadcast packets!"
 
-		recvBuff := make([]byte, 15000)
+		recvBuff := make([]byte, 1500)
 		_, rmAddr, err := server.Connection.ReadFromUDP(recvBuff)
 		if err != nil {
-			return err
+			server.Logs <- fmt.Sprintf("--> UDP SERVER Error receiving packet: %v", err)
+			return err // veya continue kullanarak döngüyü tekrar devam ettirebilirsiniz
 		}
 
 		server.Logs <- "--> UDP SERVER Discovery packet received from: " + rmAddr.String()
 		server.Logs <- "--> UDP SERVER Packet received; data: " + string(recvBuff)
 
-		// Sending the same message back to current client
-		server.Connection.WriteToUDP(message, rmAddr)
+		_, err = server.Connection.WriteToUDP(message, rmAddr)
+		if err != nil {
+			server.Logs <- fmt.Sprintf("--> UDP SERVER Error sending packet: %v", err)
+			continue
+		}
 
 		messages <- string(recvBuff)
-
 		server.Logs <- "--> UDP SERVER Sent packet to: " + rmAddr.String()
 
 		select {
@@ -66,6 +69,8 @@ func (server *UdpServer) Listen(stop chan bool, messages chan<- string) error {
 			server.Logs <- "--> UDP SERVER Stopping"
 			server.CloseConnection()
 			return nil
+		default:
+
 		}
 	}
 }

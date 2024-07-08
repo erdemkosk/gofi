@@ -72,6 +72,8 @@ func updateDropdownWithUdpClientMessages(messages <-chan string, dropdown *tview
 	for message := range messages {
 		messageTrim := logic.TrimNullBytes([]byte(message))
 
+		logChannel <- fmt.Sprintf("%s  AMK AMK", messageTrim)
+
 		var msg udp.UdpMessage
 		err := json.Unmarshal([]byte(messageTrim), &msg)
 		if err != nil {
