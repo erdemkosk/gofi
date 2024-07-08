@@ -49,7 +49,7 @@ func (server *UdpServer) Listen(stop chan bool, messages chan<- string) error {
 		_, rmAddr, err := server.Connection.ReadFromUDP(recvBuff)
 		if err != nil {
 			server.Logs <- fmt.Sprintf("--> UDP SERVER Error receiving packet: %v", err)
-			return err // veya continue kullanarak döngüyü tekrar devam ettirebilirsiniz
+			return err
 		}
 
 		server.Logs <- "--> UDP SERVER Discovery packet received from: " + rmAddr.String()
