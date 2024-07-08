@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 )
 
 func GetLocalIP() string {
@@ -53,4 +54,23 @@ func TrimNullBytes(b []byte) []byte {
 		}
 	}
 	return nil
+}
+
+func GetPath(path string) string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, path)
+}
+
+func ReadDir(path string) ([]os.DirEntry, error) {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var filteredEntries []os.DirEntry
+	for _, entry := range entries {
+		filteredEntries = append(filteredEntries, entry)
+	}
+
+	return filteredEntries, nil
 }

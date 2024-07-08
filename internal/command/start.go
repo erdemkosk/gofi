@@ -20,9 +20,11 @@ import (
 type StartCommand struct {
 }
 
-var logChannel chan string
 var app *tview.Application
-var stopUdpProcessChannel chan bool
+
+var stopUdpPeerChannel chan bool // It will control Udp peers alive status
+var logChannel chan string       // It will collect each logs from everywhere
+
 var connectionList []string
 var grid *tview.Grid
 var desktopPath string
@@ -31,29 +33,29 @@ var parentMap map[*tview.TreeNode]*tview.TreeNode
 var pathBox *tview.TextView
 
 func (command StartCommand) Execute(cmd *cobra.Command, args []string) {
-	desktopPath = GetEnvolveHomePath()
-	app = tview.NewApplication()
-
+	stopUdpPeerChannel = make(chan bool)
 	logChannel = make(chan string)
-	stopUdpProcessChannel = make(chan bool)
-	messagesFromClients := make(chan string)
+	messagesFromUDPClients := make(chan string) // ıt will retrive messages from client
+
 	selectedNodes = make(map[string]bool)
 	parentMap = make(map[*tview.TreeNode]*tview.TreeNode)
 
+	desktopPath = logic.GetPath("/Desktop")
+	app = tview.NewApplication()
 	mainFlex, logsBox, serverListDropdown := generateUI()
 
 	go listenForLogs(logChannel, logsBox)
 
-	server, client := CreateUdpPeers()
+	server, client := udp.CreateUdpPeers(logChannel)
 
 	defer server.CloseConnection()
 	defer client.CloseConnection()
 
-	go client.SendBroadcastMessage(stopUdpProcessChannel)
+	go client.SendBroadcastMessage(stopUdpPeerChannel)
 
-	go server.Listen(stopUdpProcessChannel, messagesFromClients)
+	go server.Listen(stopUdpPeerChannel, messagesFromUDPClients)
 
-	go updateDropdownWithUdpClientMessages(messagesFromClients, serverListDropdown)
+	go updateDropdownWithUdpClientMessages(messagesFromUDPClients, serverListDropdown)
 
 	if err := app.SetRoot(mainFlex, true).EnableMouse(true).Run(); err != nil {
 		panic(err)
@@ -64,22 +66,6 @@ func listenForLogs(logs <-chan string, textView *tview.TextView) {
 	for log := range logs {
 		textView.SetText(textView.GetText(false) + "\n" + log)
 	}
-}
-
-func CreateUdpPeers() (*udp.UdpServer, *udp.UdpClient) {
-	server, serverErr := udp.CreateNewUdpServer(config.UDP_SERVER_BROADCAST_IP, config.UDP_PORT, logChannel)
-	if serverErr != nil {
-		fmt.Println("Server error:", serverErr)
-		panic("Cannot create UDP Server! ")
-	}
-
-	client, clientErr := udp.CreateNewUdpClient(config.UDP_CLIENT_BROADCAST_IP, config.UDP_PORT, logChannel)
-	if clientErr != nil {
-		fmt.Println("Client error:", clientErr)
-		panic("Cannot create UDP Client! ")
-	}
-
-	return server, client
 }
 
 func updateDropdownWithUdpClientMessages(messages <-chan string, dropdown *tview.DropDown) {
@@ -105,37 +91,7 @@ func updateDropdownWithUdpClientMessages(messages <-chan string, dropdown *tview
 	}
 }
 
-func GetEnvolveHomePath() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, "/Desktop")
-}
-
-func contains(names []string, name string) bool {
-	for _, n := range names {
-		if n == name {
-			return true
-		}
-	}
-	return false
-}
-
-func ReadDir(path string, excludeNames []string) ([]os.DirEntry, error) {
-	entries, err := os.ReadDir(path)
-	if err != nil {
-		return nil, err
-	}
-
-	var filteredEntries []os.DirEntry
-	for _, entry := range entries {
-		if !contains(excludeNames, entry.Name()) {
-			filteredEntries = append(filteredEntries, entry)
-		}
-	}
-
-	return filteredEntries, nil
-}
-
-func generateUI() (*tview.Flex, *tview.TextView, *tview.DropDown) {
+func generateLoadingGauge() *tvxwidgets.ActivityModeGauge {
 	gauge := tvxwidgets.NewActivityModeGauge()
 	gauge.SetTitle("searching peers")
 	gauge.SetPgBgColor(tcell.ColorOrange)
@@ -149,10 +105,19 @@ func generateUI() (*tview.Flex, *tview.TextView, *tview.DropDown) {
 			case <-tick.C:
 				gauge.Pulse()
 				app.Draw()
+			case <-stopUdpPeerChannel:
+				tick.Stop()
+				return
 			}
+
 		}
 	}
 	go update()
+
+	return gauge
+}
+
+func generateUI() (*tview.Flex, *tview.TextView, *tview.DropDown) {
 
 	dropdown := tview.NewDropDown()
 	dropdown.SetLabel("Select an connection: ")
@@ -163,15 +128,14 @@ func generateUI() (*tview.Flex, *tview.TextView, *tview.DropDown) {
 		SetDynamicColors(true).
 		SetTextAlign(tview.AlignLeft).
 		SetBorder(true).
-		SetTitle("Current Path")
+		SetTitle("Path")
 
-	var addNodes func(target *tview.TreeNode, path string)
-	addNodes = func(target *tview.TreeNode, path string) {
+	addNodes := func(target *tview.TreeNode, path string) {
 		target.ClearChildren()
 		target.SetText("Loading...")
 
 		go func() {
-			files, err := ReadDir(path, []string{".DS_Store"})
+			files, err := logic.ReadDir(path)
 			if err != nil {
 				log.Printf("Cannot read directory: %v", err)
 				return
@@ -207,9 +171,9 @@ func generateUI() (*tview.Flex, *tview.TextView, *tview.DropDown) {
 		}()
 	}
 
-	button := tview.NewButton("Connect")
+	button := tview.NewButton("Connect To The Peer")
 	button.SetSelectedFunc(func() {
-		close(stopUdpProcessChannel)
+		udp.KillPeers(stopUdpPeerChannel)
 		grid.Clear()
 		tree := tview.NewTreeView().
 			SetRoot(tview.NewTreeNode(filepath.Base(desktopPath)).SetColor(tcell.ColorLightGray)).
@@ -297,7 +261,7 @@ func generateUI() (*tview.Flex, *tview.TextView, *tview.DropDown) {
 		SetRows(3, 3, 3).
 		SetColumns(0).
 		SetBorders(true).
-		AddItem(gauge, 0, 0, 1, 1, 0, 0, true).
+		AddItem(generateLoadingGauge(), 0, 0, 1, 1, 0, 0, true).
 		AddItem(dropdown, 1, 0, 1, 1, 0, 0, true).
 		AddItem(button, 2, 0, 1, 1, 0, 0, true)
 
