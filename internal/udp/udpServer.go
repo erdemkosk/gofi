@@ -40,7 +40,7 @@ func (server *UdpServer) CloseConnection() {
 }
 
 func (server *UdpServer) Listen(stop chan bool, messages chan<- string) error {
-	message := []byte("Hey I am server ı know u client.")
+	message := []byte("Gofi")
 
 	for {
 		server.Logs <- "--> UDP SERVER Ready to receive broadcast packets!"

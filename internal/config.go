@@ -1,12 +1,9 @@
 package internal
 
-import "time"
-
 const (
-	UDP_SERVER_BROADCAST_IP       = "0.0.0.0"
-	UDP_CLIENT_BROADCAST_IP       = "255.255.255.255"
-	UDP_PORT                      = 4444
-	UDP_CLIENT_BROADCAST_INTERVAL = 5 * time.Second
+	UDP_SERVER_BROADCAST_IP = "0.0.0.0"
+	UDP_CLIENT_BROADCAST_IP = "255.255.255.255"
+	UDP_PORT                = 4444
 )
 
 const (

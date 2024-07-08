@@ -60,7 +60,7 @@ func (client *UdpClient) SendBroadcastMessage(stop chan bool) {
 		return
 	}
 
-	ticker := time.NewTicker(config.UDP_CLIENT_BROADCAST_INTERVAL)
+	ticker := time.NewTicker(logic.GenerateRandomTime())
 	defer ticker.Stop()
 
 	for {
@@ -75,7 +75,7 @@ func (client *UdpClient) SendBroadcastMessage(stop chan bool) {
 
 			// Receive response from server
 			buf := make([]byte, 15000)
-			client.Connection.SetReadDeadline(time.Now().Add(1 * time.Second)) // Set a read timeout
+			client.Connection.SetReadDeadline(time.Now().Add(5 * time.Second)) // Set a read timeout
 			amountByte, remAddr, err := client.Connection.ReadFromUDP(buf)
 
 			if err != nil {

@@ -3,9 +3,11 @@ package logic
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"net"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 func GetLocalIP() string {
@@ -73,4 +75,12 @@ func ReadDir(path string) ([]os.DirEntry, error) {
 	}
 
 	return filteredEntries, nil
+}
+
+func GenerateRandomTime() time.Duration {
+	minInterval := 5
+	maxInterval := 10
+	randomInterval := rand.Intn(maxInterval-minInterval+1) + minInterval
+
+	return time.Duration(randomInterval) * time.Second
 }
