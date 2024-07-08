@@ -72,8 +72,6 @@ func updateDropdownWithUdpClientMessages(messages <-chan string, dropdown *tview
 	for message := range messages {
 		messageTrim := logic.TrimNullBytes([]byte(message))
 
-		logChannel <- fmt.Sprintf("%s  AMK AMK", messageTrim)
-
 		var msg udp.UdpMessage
 		err := json.Unmarshal([]byte(messageTrim), &msg)
 		if err != nil {
@@ -89,6 +87,10 @@ func updateDropdownWithUdpClientMessages(messages <-chan string, dropdown *tview
 		if !logic.Contains(connectionList, message) {
 			connectionList = append(connectionList, message)
 			dropdown.SetOptions(connectionList, nil)
+
+			if len(connectionList) > 0 {
+				dropdown.SetCurrentOption(0)
+			}
 		}
 	}
 }
