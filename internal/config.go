@@ -7,8 +7,7 @@ const (
 )
 
 const (
-	TCP_SERVER_IP = "0.0.0.0"
-	TCP_CLIENT_IP = "127.0.0.1"
+	TCP_SERVER_IP = "127.0.0.1"
 	TCP_PORT      = 8888
 )
 

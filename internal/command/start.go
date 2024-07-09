@@ -10,6 +10,7 @@ import (
 
 	config "github.com/erdemkosk/gofi/internal"
 	"github.com/erdemkosk/gofi/internal/logic"
+	"github.com/erdemkosk/gofi/internal/tcp"
 	"github.com/erdemkosk/gofi/internal/udp"
 	"github.com/gdamore/tcell/v2"
 	"github.com/navidys/tvxwidgets"
@@ -25,10 +26,9 @@ var (
 	logChannel         chan string
 	connectionList     []string
 	grid               *tview.Grid
-	desktopPath        string
 	selectedNodes      map[string]bool
 	parentMap          map[*tview.TreeNode]*tview.TreeNode
-	pathBox            *tview.TextView
+	listDropDown       *tview.DropDown
 )
 
 func (command StartCommand) Execute(cmd *cobra.Command, args []string) {
@@ -39,22 +39,33 @@ func (command StartCommand) Execute(cmd *cobra.Command, args []string) {
 	selectedNodes = make(map[string]bool)
 	parentMap = make(map[*tview.TreeNode]*tview.TreeNode)
 
-	desktopPath = logic.GetPath("/Desktop")
 	app = tview.NewApplication()
 	mainFlex, logsBox, serverListDropdown := generateUI()
+	listDropDown = serverListDropdown
 
 	go listenForLogs(logChannel, logsBox)
 
-	server, client := udp.CreateUdpPeers(logChannel)
+	udpServer, udpClient := udp.CreateUdpPeers(logChannel)
 
-	defer server.CloseConnection()
-	defer client.CloseConnection()
+	defer udpServer.CloseConnection()
+	defer udpClient.CloseConnection()
 
-	go client.SendBroadcastMessage(stopUdpPeerChannel)
+	go udpClient.SendBroadcastMessage(stopUdpPeerChannel)
 
-	go server.Listen(stopUdpPeerChannel, messagesFromUDPClients)
+	go udpServer.Listen(stopUdpPeerChannel, messagesFromUDPClients)
 
 	go updateDropdownWithUdpClientMessages(messagesFromUDPClients, serverListDropdown)
+
+	tcpServer, err := tcp.CreateNewTcpServer(config.TCP_SERVER_IP, config.TCP_PORT, logChannel)
+
+	if err != nil {
+		fmt.Println("Error creating TCP server:", err)
+		return
+	}
+
+	stopTcpServerChannel := make(chan bool)
+
+	go tcpServer.Listen(stopTcpServerChannel)
 
 	if err := app.SetRoot(mainFlex, true).EnableMouse(true).Run(); err != nil {
 		panic(err)
@@ -123,13 +134,6 @@ func generateUI() (*tview.Flex, *tview.TextView, *tview.DropDown) {
 	dropdown := tview.NewDropDown()
 	dropdown.SetLabel("Select a connection: ")
 	dropdown.SetOptions([]string{}, nil)
-
-	pathBox = tview.NewTextView()
-	pathBox.SetText(desktopPath).
-		SetDynamicColors(true).
-		SetTextAlign(tview.AlignLeft).
-		SetBorder(true).
-		SetTitle("Path")
 
 	button := tview.NewButton("Connect to the Peer")
 	button.SetSelectedFunc(connectButtonHandler)
@@ -210,7 +214,50 @@ func addNodes(target *tview.TreeNode, path string) {
 }
 
 func connectButtonHandler() {
-	udp.KillPeers(stopUdpPeerChannel)
+	index, option := listDropDown.GetCurrentOption()
+	if index != -1 {
+
+		messageTrim := logic.TrimNullBytes([]byte(option))
+
+		var msg udp.UdpMessage
+		err := json.Unmarshal([]byte(messageTrim), &msg)
+		if err != nil {
+			logChannel <- fmt.Sprintf("Error unmarshaling JSON: %v %s", err, option)
+			return
+		}
+
+		logChannel <- fmt.Sprintf("ftyfty: %s %d", msg.IP, msg.Port)
+
+		client, err := tcp.CreateNewTcpClient(msg.IP, msg.Port, logChannel)
+
+		messageChannel := make(chan string)
+
+		go func() {
+			client.SendMessage("Hello, Server!", messageChannel)
+		}()
+
+		if err != nil {
+			fmt.Println("Error creating TCP client:", err)
+			return
+		}
+
+		// Seçilen seçenekle ilgili diğer işlemler burada yapılabilir
+	} else {
+		logChannel <- "No option selected"
+		return
+	}
+
+	udp.KillPeers(stopUdpPeerChannel) //stop udp peers
+
+	desktopPath := logic.GetPath("/Desktop")
+
+	pathBox := tview.NewTextView()
+	pathBox.SetText(desktopPath).
+		SetDynamicColors(true).
+		SetTextAlign(tview.AlignLeft).
+		SetBorder(true).
+		SetTitle("Path")
+
 	grid.Clear()
 	tree := tview.NewTreeView().
 		SetRoot(tview.NewTreeNode(filepath.Base(desktopPath)).SetColor(tcell.ColorLightGray)).
