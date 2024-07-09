@@ -56,7 +56,7 @@ func (command StartCommand) Execute(cmd *cobra.Command, args []string) {
 
 	go updateDropdownWithUdpClientMessages(messagesFromUDPClients, serverListDropdown)
 
-	tcpServer, err := tcp.CreateNewTcpServer(config.TCP_SERVER_IP, config.TCP_PORT, logChannel)
+	tcpServer, err := tcp.CreateNewTcpServer(logic.GetLocalIP(), config.TCP_PORT, logChannel)
 
 	if err != nil {
 		fmt.Println("Error creating TCP server:", err)
@@ -228,7 +228,7 @@ func connectButtonHandler() {
 
 		logChannel <- fmt.Sprintf("ftyfty: %s %d", msg.IP, msg.Port)
 
-		client, err := tcp.CreateNewTcpClient(msg.IP, msg.Port, logChannel)
+		client, err := tcp.CreateNewTcpClient("127.0.0.1", msg.Port, logChannel)
 
 		messageChannel := make(chan string)
 
