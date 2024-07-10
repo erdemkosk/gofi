@@ -1,7 +1,6 @@
 package command
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -21,18 +20,18 @@ import (
 type StartCommand struct{}
 
 var (
-	app                *tview.Application
-	stopUdpPeerChannel chan bool
-	logChannel         chan string
-	connectionList     []string
-	grid               *tview.Grid
-	selectedNodes      map[string]bool
-	parentMap          map[*tview.TreeNode]*tview.TreeNode
-	listDropDown       *tview.DropDown
+	app                    *tview.Application
+	stopUnusedPeersChannel chan bool //UDP Client , UDP Server and TCP server acting together. If anyone who is interested to connect after broadcast we dont need 3 of them!
+	logChannel             chan string
+	connectionList         []string
+	grid                   *tview.Grid
+	selectedNodes          map[string]bool
+	parentMap              map[*tview.TreeNode]*tview.TreeNode
+	listDropDown           *tview.DropDown
 )
 
 func (command StartCommand) Execute(cmd *cobra.Command, args []string) {
-	stopUdpPeerChannel = make(chan bool)
+	stopUnusedPeersChannel = make(chan bool)
 	logChannel = make(chan string)
 	messagesFromUDPClients := make(chan *udp.UdpMessage)
 
@@ -46,26 +45,19 @@ func (command StartCommand) Execute(cmd *cobra.Command, args []string) {
 	go listenForLogs(logChannel, logsBox)
 
 	udpServer, udpClient := udp.CreateUdpPeers(logChannel)
+	tcpServer, _ := tcp.CreateNewTcpServer(logic.GetLocalIP(), config.TCP_PORT, logChannel)
 
 	defer udpServer.CloseConnection()
 	defer udpClient.CloseConnection()
+	defer tcpServer.CloseConnection()
 
-	go udpClient.SendBroadcastMessage(stopUdpPeerChannel)
+	go udpClient.SendBroadcastMessage(stopUnusedPeersChannel)
 
-	go udpServer.Listen(stopUdpPeerChannel, messagesFromUDPClients)
+	go udpServer.Listen(stopUnusedPeersChannel, messagesFromUDPClients)
+
+	go tcpServer.Listen(stopUnusedPeersChannel) // ıf the button click (if we are tcp client we dont need this server too! we will be client not server)
 
 	go updateDropdownWithUdpClientMessages(messagesFromUDPClients, serverListDropdown)
-
-	tcpServer, err := tcp.CreateNewTcpServer(logic.GetLocalIP(), config.TCP_PORT, logChannel)
-
-	if err != nil {
-		fmt.Println("Error creating TCP server:", err)
-		return
-	}
-
-	stopTcpServerChannel := make(chan bool)
-
-	go tcpServer.Listen(stopTcpServerChannel)
 
 	if err := app.SetRoot(mainFlex, true).EnableMouse(true).Run(); err != nil {
 		panic(err)
@@ -75,6 +67,7 @@ func (command StartCommand) Execute(cmd *cobra.Command, args []string) {
 func listenForLogs(logs <-chan string, textView *tview.TextView) {
 	for log := range logs {
 		textView.SetText(textView.GetText(false) + "\n" + log)
+		textView.ScrollToEnd()
 	}
 }
 
@@ -83,7 +76,7 @@ func updateDropdownWithUdpClientMessages(messages <-chan *udp.UdpMessage, dropdo
 		stringfyUdpMessage := udp.ConvertUdpMessageToJson(message)
 
 		if message.IP == logic.GetLocalIP() {
-			logChannel <- fmt.Sprintf("%s is the current package, ignoring it!", stringfyUdpMessage)
+			logChannel <- fmt.Sprintf("--> %s is the current computer, so ignoring it!", stringfyUdpMessage)
 			continue
 		}
 
@@ -112,7 +105,7 @@ func generateLoadingGauge() *tvxwidgets.ActivityModeGauge {
 			case <-tick.C:
 				gauge.Pulse()
 				app.Draw()
-			case <-stopUdpPeerChannel:
+			case <-stopUnusedPeersChannel:
 				tick.Stop()
 				return
 			}
@@ -210,16 +203,7 @@ func connectButtonHandler() {
 	index, option := listDropDown.GetCurrentOption()
 	if index != -1 {
 
-		messageTrim := logic.TrimNullBytes([]byte(option))
-
-		var msg udp.UdpMessage
-		err := json.Unmarshal([]byte(messageTrim), &msg)
-		if err != nil {
-			logChannel <- fmt.Sprintf("Error unmarshaling JSON: %v %s", err, option)
-			return
-		}
-
-		logChannel <- fmt.Sprintf("ftyfty: %s %d", msg.IP, msg.Port)
+		msg := udp.ConvertJsonToUdpMessage([]byte(option), logChannel)
 
 		client, err := tcp.CreateNewTcpClient(msg.IP, msg.Port, logChannel)
 
@@ -234,13 +218,12 @@ func connectButtonHandler() {
 			return
 		}
 
-		// Seçilen seçenekle ilgili diğer işlemler burada yapılabilir
 	} else {
 		logChannel <- "No option selected"
 		return
 	}
 
-	udp.KillPeers(stopUdpPeerChannel) //stop udp peers
+	close(stopUnusedPeersChannel)
 
 	desktopPath := logic.GetPath("/Desktop")
 

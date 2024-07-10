@@ -61,7 +61,7 @@ func (client *UdpClient) SendBroadcastMessage(stop chan bool) {
 		select {
 		case <-ticker.C:
 			_, err := client.Connection.Write(messageBytes)
-			client.Logs <- "--> UDP CLIENT  sended broadcast message to everyone who is interested"
+			client.Logs <- "--> UDP CLIENT sended broadcast message to everyone who is interested"
 
 			if err != nil {
 				client.Logs <- fmt.Sprintf("--> UDP CLIENT Error sending message: %v", err)
