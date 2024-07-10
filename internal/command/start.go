@@ -34,7 +34,7 @@ var (
 func (command StartCommand) Execute(cmd *cobra.Command, args []string) {
 	stopUdpPeerChannel = make(chan bool)
 	logChannel = make(chan string)
-	messagesFromUDPClients := make(chan string)
+	messagesFromUDPClients := make(chan *udp.UdpMessage)
 
 	selectedNodes = make(map[string]bool)
 	parentMap = make(map[*tview.TreeNode]*tview.TreeNode)
@@ -78,24 +78,17 @@ func listenForLogs(logs <-chan string, textView *tview.TextView) {
 	}
 }
 
-func updateDropdownWithUdpClientMessages(messages <-chan string, dropdown *tview.DropDown) {
+func updateDropdownWithUdpClientMessages(messages <-chan *udp.UdpMessage, dropdown *tview.DropDown) {
 	for message := range messages {
-		messageTrim := logic.TrimNullBytes([]byte(message))
+		stringfyUdpMessage := udp.ConvertUdpMessageToJson(message)
 
-		var msg udp.UdpMessage
-		err := json.Unmarshal([]byte(messageTrim), &msg)
-		if err != nil {
-			logChannel <- fmt.Sprintf("Error unmarshaling JSON: %v %s", err, message)
+		if message.IP == logic.GetLocalIP() {
+			logChannel <- fmt.Sprintf("%s is the current package, ignoring it!", stringfyUdpMessage)
 			continue
 		}
 
-		if msg.IP == logic.GetLocalIP() {
-			logChannel <- fmt.Sprintf("%s is the current package, ignoring it!", message)
-			continue
-		}
-
-		if !logic.Contains(connectionList, message) {
-			connectionList = append(connectionList, message)
+		if !logic.Contains(connectionList, stringfyUdpMessage) {
+			connectionList = append(connectionList, stringfyUdpMessage)
 			dropdown.SetOptions(connectionList, nil)
 
 			if len(connectionList) > 0 {
@@ -228,7 +221,7 @@ func connectButtonHandler() {
 
 		logChannel <- fmt.Sprintf("ftyfty: %s %d", msg.IP, msg.Port)
 
-		client, err := tcp.CreateNewTcpClient("127.0.0.1", msg.Port, logChannel)
+		client, err := tcp.CreateNewTcpClient(msg.IP, msg.Port, logChannel)
 
 		messageChannel := make(chan string)
 

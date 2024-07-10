@@ -39,7 +39,7 @@ func (server *UdpServer) CloseConnection() {
 	server.Logs <- "--> UDP SERVER closed successfully!"
 }
 
-func (server *UdpServer) Listen(stop chan bool, messages chan<- string) error {
+func (server *UdpServer) Listen(stop chan bool, messages chan<- *UdpMessage) error {
 	message := []byte("Gofi")
 
 	for {
@@ -61,7 +61,11 @@ func (server *UdpServer) Listen(stop chan bool, messages chan<- string) error {
 			continue
 		}
 
-		messages <- string(recvBuff)
+		udpMessage := ConvertJsonToUdpMessage(recvBuff, server.Logs)
+
+		if udpMessage != nil {
+			messages <- udpMessage
+		}
 		server.Logs <- "--> UDP SERVER Sent packet to: " + rmAddr.String()
 
 		select {

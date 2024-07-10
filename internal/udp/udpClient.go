@@ -18,12 +18,6 @@ type UdpClient struct {
 	Logs        chan string
 }
 
-type UdpMessage struct {
-	IP   string `json:"ip"`
-	Port int    `json:"port"`
-	Name string `json:"name"`
-}
-
 func CreateNewUdpClient(ip string, port int, logs chan string) (*UdpClient, error) {
 	udpAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", ip, port))
 	if err != nil {
