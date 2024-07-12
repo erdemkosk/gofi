@@ -20,21 +20,25 @@ import (
 type StartCommand struct{}
 
 var (
-	app                    *tview.Application
-	stopUnusedPeersChannel chan bool //UDP Client , UDP Server and TCP server acting together. If anyone who is interested to connect after broadcast we dont need 3 of them!
-	logChannel             chan string
-	connectionList         []string
-	grid                   *tview.Grid
-	selectedNodes          map[string]bool
-	parentMap              map[*tview.TreeNode]*tview.TreeNode
-	listDropDown           *tview.DropDown
-	currentPath            string
+	app                            *tview.Application
+	stopUnusedPeersChannel         chan bool //UDP Client , UDP Server and TCP server acting together. If anyone who is interested to connect after broadcast we dont need 3 of them!
+	stopUnusedTcpServerChannel     chan bool //UDP Client , UDP Server and TCP server acting together. If anyone who is interested to connect after broadcast we dont need 3 of them!
+	clientConnectedTpServerChannel chan bool
+	logChannel                     chan string
+	connectionList                 []string
+	grid                           *tview.Grid
+	selectedNodes                  map[string]bool
+	parentMap                      map[*tview.TreeNode]*tview.TreeNode
+	listDropDown                   *tview.DropDown
+	currentPath                    string
 )
 
 func (command StartCommand) Execute(cmd *cobra.Command, args []string) {
 	stopUnusedPeersChannel = make(chan bool)
+	stopUnusedTcpServerChannel = make(chan bool)
 	logChannel = make(chan string)
 	messagesFromUDPClients := make(chan *udp.UdpMessage)
+	clientConnectedTpServerChannel = make(chan bool)
 
 	selectedNodes = make(map[string]bool)
 	parentMap = make(map[*tview.TreeNode]*tview.TreeNode)
@@ -44,6 +48,7 @@ func (command StartCommand) Execute(cmd *cobra.Command, args []string) {
 	listDropDown = serverListDropdown
 
 	go listenForLogs(logChannel, logsBox)
+	go listenForTcpConnection()
 
 	udpServer, udpClient := udp.CreateUdpPeers(logChannel)
 	tcpServer, _ := tcp.CreateNewTcpServer(logic.GetLocalIP(), config.TCP_PORT, logChannel)
@@ -56,7 +61,7 @@ func (command StartCommand) Execute(cmd *cobra.Command, args []string) {
 
 	go udpServer.Listen(stopUnusedPeersChannel, messagesFromUDPClients)
 
-	go tcpServer.Listen(stopUnusedPeersChannel) // ıf the button click (if we are tcp client we dont need this server too! we will be client not server)
+	go tcpServer.Listen(stopUnusedTcpServerChannel, clientConnectedTpServerChannel) // ıf the button click (if we are tcp client we dont need this server too! we will be client not server) If anyone connected we will know and change uı
 
 	go updateDropdownWithUdpClientMessages(messagesFromUDPClients, serverListDropdown)
 
@@ -69,6 +74,15 @@ func listenForLogs(logs <-chan string, textView *tview.TextView) {
 	for log := range logs {
 		textView.SetText(textView.GetText(false) + "\n" + log)
 		textView.ScrollToEnd()
+	}
+}
+
+func listenForTcpConnection() {
+	for msg := range clientConnectedTpServerChannel {
+		// Update the TextView with the received log message
+		if msg {
+			changeUiState()
+		}
 	}
 }
 
@@ -224,6 +238,13 @@ func connectButtonHandler() {
 		return
 	}
 
+	// In here we are client
+	close(stopUnusedTcpServerChannel)
+
+	changeUiState()
+}
+
+func changeUiState() {
 	close(stopUnusedPeersChannel)
 
 	desktopPath := logic.GetPath("/Desktop")

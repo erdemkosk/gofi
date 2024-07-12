@@ -29,7 +29,7 @@ func CreateNewTcpServer(ip string, port int, logs chan string) (*TcpServer, erro
 	return &TcpServer{Connection: conn, Address: *tcpAddr, IsConnected: true, Logs: logs}, nil
 }
 
-func (server *TcpServer) Listen(stop chan bool) error {
+func (server *TcpServer) Listen(stop chan bool, connectionEstablished chan<- bool) error {
 	server.Logs <- "--> TCP SERVER Ready to receive connections!"
 
 	for {
@@ -55,6 +55,10 @@ func (server *TcpServer) Listen(stop chan bool) error {
 			}
 
 			server.Logs <- "--> TCP SERVER Connection accepted from: " + conn.RemoteAddr().String()
+
+			if connectionEstablished != nil {
+				connectionEstablished <- true
+			}
 
 			go server.handleConnection(conn)
 		}
