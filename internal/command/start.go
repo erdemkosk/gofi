@@ -28,6 +28,7 @@ var (
 	selectedNodes          map[string]bool
 	parentMap              map[*tview.TreeNode]*tview.TreeNode
 	listDropDown           *tview.DropDown
+	currentPath            string
 )
 
 func (command StartCommand) Execute(cmd *cobra.Command, args []string) {
@@ -219,7 +220,7 @@ func connectButtonHandler() {
 		}
 
 	} else {
-		logChannel <- "No option selected"
+		logChannel <- "--> No peer selected!"
 		return
 	}
 
@@ -227,12 +228,7 @@ func connectButtonHandler() {
 
 	desktopPath := logic.GetPath("/Desktop")
 
-	pathBox := tview.NewTextView()
-	pathBox.SetText(desktopPath).
-		SetDynamicColors(true).
-		SetTextAlign(tview.AlignLeft).
-		SetBorder(true).
-		SetTitle("Path")
+	currentPath = desktopPath
 
 	grid.Clear()
 	tree := tview.NewTreeView().
@@ -240,10 +236,13 @@ func connectButtonHandler() {
 		SetCurrentNode(tview.NewTreeNode(filepath.Base(desktopPath)).SetColor(tcell.ColorDarkSlateBlue))
 
 	tree.SetTitle("Finder").SetBorder(true)
-	grid.SetRows(3, 0).
-		SetColumns(0).
-		AddItem(pathBox, 0, 0, 1, 1, 0, 0, true).
-		AddItem(tree, 1, 0, 1, 1, 0, 0, true)
+	grid.SetRows(0).
+		SetColumns(0, 0).
+		AddItem(tree, 0, 0, 1, 1, 0, 0, true).
+		AddItem(tview.NewFlex().
+			SetDirection(tview.FlexRow).
+			AddItem(tview.NewTextView().SetTitle("Received Data").SetBorder(true), 0, 1, false).
+			AddItem(tview.NewTextView().SetTitle("Sent Data").SetBorder(true), 0, 1, false), 0, 1, 1, 1, 0, 0, true)
 
 	tree.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyRune && event.Rune() == ' ' {
@@ -288,8 +287,7 @@ func connectButtonHandler() {
 				return nil
 			}
 
-			pathBox.SetText(childPath)
-
+			currentPath = childPath
 			root := tview.NewTreeNode(filepath.Base(childPath)).SetColor(tcell.ColorLightGray)
 			tree.SetRoot(root).SetCurrentNode(root)
 			addNodes(root, childPath)
@@ -298,10 +296,9 @@ func connectButtonHandler() {
 		} else if event.Key() == tcell.KeyLeft {
 			currentNode := tree.GetCurrentNode()
 			if currentNode != nil {
-				currentPath := pathBox.GetText(true)
 				parentPath := filepath.Dir(currentPath)
 				if parentPath != currentPath {
-					pathBox.SetText(parentPath)
+					currentPath = parentPath
 
 					root := tview.NewTreeNode(filepath.Base(parentPath)).SetColor(tcell.ColorLightGray)
 					tree.SetRoot(root).SetCurrentNode(root)
@@ -310,6 +307,7 @@ func connectButtonHandler() {
 			}
 			return nil
 		}
+
 		return event
 	})
 
