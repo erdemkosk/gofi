@@ -97,73 +97,76 @@ func (server *TcpServer) CloseConnection() {
 }
 
 func (server *TcpServer) handleConnection() {
+	defer server.currentConnection.Close()
 
-	// Metadata boyutunu okuma
-	metaDataSizeBuff := make([]byte, 16)
-	_, err := server.currentConnection.Read(metaDataSizeBuff)
-	if err != nil {
-		server.Logs <- fmt.Sprintf("--> TCP SERVER Error reading metadata size: %v", err)
-		return
-	}
-
-	metaDataSize, err := strconv.Atoi(strings.TrimSpace(string(metaDataSizeBuff)))
-	if err != nil {
-		server.Logs <- fmt.Sprintf("--> TCP SERVER Error converting metadata size: %v", err)
-		return
-	}
-
-	// Metadata'yı okuma
-	metaDataBuff := make([]byte, metaDataSize)
-	_, err = server.currentConnection.Read(metaDataBuff)
-	if err != nil {
-		server.Logs <- fmt.Sprintf("--> TCP SERVER Error reading metadata: %v", err)
-		return
-	}
-
-	var metaData FileMetadata
-	err = json.Unmarshal(metaDataBuff, &metaData)
-	if err != nil {
-		server.Logs <- fmt.Sprintf("--> TCP SERVER Error unmarshalling metadata: %v", err)
-		return
-	}
-
-	server.Logs <- fmt.Sprintf("--> TCP SERVER Received file metadata: %+v", metaData)
-
-	server.Logs <- fmt.Sprintf("--> !!!!!!! %s", metaData.FileName)
-	server.Logs <- fmt.Sprintf("--> !!!!!!! %s", filepath.Join("/Desktop", metaData.FileName))
-
-	// Dosya yazma işlemi
-	filePath := filepath.Join(logic.GetPath("/Desktop"), metaData.FileName) // Örneğin, "/Desktop" klasörüne kaydedilecek
-	file, err := os.Create(filePath)
-	if err != nil {
-		server.Logs <- fmt.Sprintf("--> TCP SERVER Error creating file: %v", err)
-		return
-	}
-	defer file.Close()
-
-	recvBuff := make([]byte, 1024)
-	totalReceived := 0
 	for {
-		n, err := server.currentConnection.Read(recvBuff)
+		// Metadata size buffer reading
+		metaDataSizeBuff := make([]byte, 16)
+		_, err := io.ReadFull(server.currentConnection, metaDataSizeBuff)
 		if err != nil {
-			if err == io.EOF {
-				server.Logs <- "--> TCP SERVER File receiving completed"
-				break
+			server.Logs <- fmt.Sprintf("--> TCP SERVER Error reading metadata size: %v", err)
+			return
+		}
+
+		metaDataSize, err := strconv.Atoi(strings.TrimSpace(string(metaDataSizeBuff)))
+		if err != nil {
+			server.Logs <- fmt.Sprintf("--> TCP SERVER Error converting metadata size: %v", err)
+			return
+		}
+
+		// Metadata reading
+		metaDataBuff := make([]byte, metaDataSize)
+		_, err = io.ReadFull(server.currentConnection, metaDataBuff)
+		if err != nil {
+			server.Logs <- fmt.Sprintf("--> TCP SERVER Error reading metadata: %v", err)
+			return
+		}
+
+		var metaData FileMetadata
+		err = json.Unmarshal(metaDataBuff, &metaData)
+		if err != nil {
+			server.Logs <- fmt.Sprintf("--> TCP SERVER Error unmarshalling metadata: %v", err)
+			return
+		}
+
+		server.Logs <- fmt.Sprintf("--> TCP SERVER Received file metadata: %+v", metaData)
+
+		// File writing
+		filePath := filepath.Join(logic.GetPath("/Desktop"), metaData.FileName)
+		file, err := os.Create(filePath)
+		if err != nil {
+			server.Logs <- fmt.Sprintf("--> TCP SERVER Error creating file: %v", err)
+			return
+		}
+		defer file.Close()
+
+		// File data receiving loop
+		totalReceived := int64(0)
+		recvBuff := make([]byte, 1024)
+		for totalReceived < metaData.FileSize {
+			n, err := server.currentConnection.Read(recvBuff)
+			if err != nil && err != io.EOF {
+				server.Logs <- fmt.Sprintf("--> TCP SERVER Error reading file data: %v", err)
+				return
 			}
-			server.Logs <- fmt.Sprintf("--> TCP SERVER Error reading file data: %v", err)
-			return
+
+			if n == 0 {
+				server.Logs <- "--> TCP SERVER No more data received unexpectedly"
+				return
+			}
+
+			_, err = file.Write(recvBuff[:n])
+			if err != nil {
+				server.Logs <- fmt.Sprintf("--> TCP SERVER Error writing file data: %v", err)
+				return
+			}
+
+			totalReceived += int64(n)
 		}
 
-		_, err = file.Write(recvBuff[:n])
-		if err != nil {
-			server.Logs <- fmt.Sprintf("--> TCP SERVER Error writing file data: %v", err)
-			return
-		}
+		server.Logs <- "--> TCP SERVER File receiving completed"
 
-		totalReceived += n
 	}
-
-	server.Logs <- fmt.Sprintf("--> TCP SERVER Received %d bytes of file data", totalReceived)
 }
 
 func (server *TcpServer) SendFileToClient(filePath string) error {
