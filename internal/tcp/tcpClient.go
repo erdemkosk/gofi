@@ -155,10 +155,12 @@ func (client *TcpClient) SendFileToServer(filePath string) error {
 	}
 
 	// Send metadata size
-	metaDataSize := fmt.Sprintf("%016d", len(metaDataBytes))
+	// Send metadata size
+	metaDataSize := strconv.Itoa(len(metaDataBytes))
+	metaDataSize = fmt.Sprintf("%016s", metaDataSize)
 	_, err = client.Connection.Write([]byte(metaDataSize))
 	if err != nil {
-		return fmt.Errorf("error sending metadata size: %v", err)
+		return fmt.Errorf("error sending metadata size: %v %s", err, metaDataSize)
 	}
 
 	// Send metadata
