@@ -1,16 +1,29 @@
 package tcp
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"net"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 )
 
 type TcpServer struct {
-	Address     net.TCPAddr
-	Connection  *net.TCPListener
-	IsConnected bool
-	Logs        chan string
+	Address           net.TCPAddr
+	Connection        *net.TCPListener
+	IsConnected       bool
+	Logs              chan string
+	currentConnection *net.TCPConn
+}
+
+type FileMetadata struct {
+	FileName string
+	FileType string
+	FileSize int64
 }
 
 func CreateNewTcpServer(ip string, port int, logs chan string) (*TcpServer, error) {
@@ -60,7 +73,9 @@ func (server *TcpServer) Listen(stop chan bool, connectionEstablished chan<- boo
 				connectionEstablished <- true
 			}
 
-			go server.handleConnection(conn)
+			server.currentConnection = conn
+
+			go server.handleConnection()
 		}
 	}
 }
@@ -79,24 +94,143 @@ func (server *TcpServer) CloseConnection() {
 	server.Logs <- "--> TCP SERVER closed successfully!"
 }
 
-func (server *TcpServer) handleConnection(conn *net.TCPConn) {
+func (server *TcpServer) handleConnection() {
+
+	// Metadata boyutunu okuma
+	metaDataSizeBuff := make([]byte, 16)
+	_, err := server.currentConnection.Read(metaDataSizeBuff)
+	if err != nil {
+		server.Logs <- fmt.Sprintf("--> TCP SERVER Error reading metadata size: %v", err)
+		return
+	}
+
+	metaDataSize, err := strconv.Atoi(strings.TrimSpace(string(metaDataSizeBuff)))
+	if err != nil {
+		server.Logs <- fmt.Sprintf("--> TCP SERVER Error converting metadata size: %v", err)
+		return
+	}
+
+	// Metadata'yı okuma
+	metaDataBuff := make([]byte, metaDataSize)
+	_, err = server.currentConnection.Read(metaDataBuff)
+	if err != nil {
+		server.Logs <- fmt.Sprintf("--> TCP SERVER Error reading metadata: %v", err)
+		return
+	}
+
+	var metaData FileMetadata
+	err = json.Unmarshal(metaDataBuff, &metaData)
+	if err != nil {
+		server.Logs <- fmt.Sprintf("--> TCP SERVER Error unmarshalling metadata: %v", err)
+		return
+	}
+
+	server.Logs <- fmt.Sprintf("--> TCP SERVER Received file metadata: %+v", metaData)
+
+	// Dosya yazma işlemi
+	filePath := filepath.Join("/Desktop", metaData.FileName) // Örneğin, "/Desktop" klasörüne kaydedilecek
+	file, err := os.Create(filePath)
+	if err != nil {
+		server.Logs <- fmt.Sprintf("--> TCP SERVER Error creating file: %v", err)
+		return
+	}
+	defer file.Close()
+
+	recvBuff := make([]byte, 1024)
+	totalReceived := 0
+	for {
+		n, err := server.currentConnection.Read(recvBuff)
+		if err != nil {
+			if err == io.EOF {
+				server.Logs <- "--> TCP SERVER File receiving completed"
+				break
+			}
+			server.Logs <- fmt.Sprintf("--> TCP SERVER Error reading file data: %v", err)
+			return
+		}
+
+		_, err = file.Write(recvBuff[:n])
+		if err != nil {
+			server.Logs <- fmt.Sprintf("--> TCP SERVER Error writing file data: %v", err)
+			return
+		}
+
+		totalReceived += n
+	}
+
+	server.Logs <- fmt.Sprintf("--> TCP SERVER Received %d bytes of file data", totalReceived)
+}
+
+func (server *TcpServer) SendFileToClient(filePath string) error {
+	// Open the file to send
+	file, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("error opening file: %v", err)
+	}
+	defer file.Close()
+
+	// Get file info for metadata
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return fmt.Errorf("error getting file info: %v", err)
+	}
+
+	// Prepare file metadata
+	metaData := FileMetadata{
+		FileName: fileInfo.Name(),
+		FileType: filepath.Ext(filePath),
+		FileSize: fileInfo.Size(),
+	}
+
+	// Resolve client address (assuming we have a known client address in the server)
+	clientAddr := server.Address.IP.String() + ":" + strconv.Itoa(server.Address.Port)
+
+	// Connect to client
+	conn, err := net.Dial("tcp", clientAddr)
+	if err != nil {
+		return fmt.Errorf("error connecting to client: %v", err)
+	}
 	defer conn.Close()
 
-	recvBuff := make([]byte, 1500)
-	_, err := conn.Read(recvBuff)
+	// Marshal metadata to JSON
+	metaDataJSON, err := json.Marshal(metaData)
 	if err != nil {
-		server.Logs <- fmt.Sprintf("--> TCP SERVER Error reading data: %v", err)
-		return
+		return fmt.Errorf("error marshalling metadata to JSON: %v", err)
 	}
 
-	server.Logs <- "--> TCP SERVER Packet received; data: " + string(recvBuff)
-
-	message := []byte("Response from server")
-	_, err = conn.Write(message)
+	// Send metadata size
+	metaDataSize := len(metaDataJSON)
+	metaDataSizeStr := fmt.Sprintf("%16d", metaDataSize)
+	_, err = conn.Write([]byte(metaDataSizeStr))
 	if err != nil {
-		server.Logs <- fmt.Sprintf("--> TCP SERVER Error sending packet: %v", err)
-		return
+		return fmt.Errorf("error sending metadata size: %v", err)
 	}
 
-	server.Logs <- "--> TCP SERVER Sent packet to: " + conn.RemoteAddr().String()
+	// Send metadata
+	_, err = conn.Write(metaDataJSON)
+	if err != nil {
+		return fmt.Errorf("error sending metadata: %v", err)
+	}
+
+	// Send file data
+	sendBuffer := make([]byte, 1024)
+	for {
+		bytesRead, err := file.Read(sendBuffer)
+		if err != nil && err != io.EOF {
+			return fmt.Errorf("error reading file: %v", err)
+		}
+
+		if bytesRead == 0 {
+			break
+		}
+
+		_, err = conn.Write(sendBuffer[:bytesRead])
+		if err != nil {
+			return fmt.Errorf("error sending file data: %v", err)
+		}
+	}
+
+	server.Logs <- fmt.Sprintf("--> TCP SERVER File sent to %s: %s", clientAddr, metaData.FileName)
+
+	return nil
 }
