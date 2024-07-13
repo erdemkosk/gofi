@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 )
 
 type TcpClient struct {
@@ -56,21 +57,30 @@ func (client *TcpClient) CloseConnection() {
 func (client *TcpClient) SendFileToServer(destinationPath string) {
 	client.mutex.Lock()
 	client.FileQueue = append(client.FileQueue, destinationPath)
-	client.Logs <- fmt.Sprintf("--> !!!!!!!! %s", destinationPath)
+	client.Logs <- fmt.Sprintf("--> Queued file: %s", destinationPath)
+	client.mutex.Unlock()
 
-	for len(client.FileQueue) > 0 {
-		client.Logs <- fmt.Sprintf("--> LEN: %v", len(client.FileQueue))
-		filePath := client.FileQueue[0]
-		client.FileQueue = client.FileQueue[1:]
+	go func() {
+		for {
+			client.mutex.Lock()
+			if len(client.FileQueue) == 0 {
+				client.mutex.Unlock()
+				break
+			}
+			filePath := client.FileQueue[0]
+			client.FileQueue = client.FileQueue[1:]
+			client.mutex.Unlock()
 
-		err := client.sendFile(filePath)
-		if err != nil {
-			client.Logs <- fmt.Sprintf("--> TCP CLIENT Error sending file: %v", err)
+			err := client.sendFile(filePath)
+			if err != nil {
+				client.Logs <- fmt.Sprintf("--> TCP CLIENT Error sending file: %v", err)
+			}
+
+			time.Sleep(1 * time.Second) // 1 saniye ara
 		}
-		client.mutex.Unlock()
-	}
 
-	client.Logs <- "--> All files sent successfully!"
+		client.Logs <- "--> All files sent successfully!"
+	}()
 }
 
 func (client *TcpClient) sendFile(filePath string) error {
@@ -133,11 +143,6 @@ func (client *TcpClient) sendFile(filePath string) error {
 		}
 
 		totalSent += n
-	}
-
-	_, err = client.Connection.Write([]byte("EOF"))
-	if err != nil {
-		return fmt.Errorf("error sending delimiter: %v", err)
 	}
 
 	client.Logs <- fmt.Sprintf("--> Sent %d bytes of file data for: %s", totalSent, fileInfo.Name())

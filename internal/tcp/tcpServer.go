@@ -157,11 +157,6 @@ func (server *TcpServer) handleConnection() {
 				return
 			}
 
-			if string(recvBuff[:n]) == "EOF" {
-				// End of file received
-				break
-			}
-
 			_, err = file.Write(recvBuff[:n])
 			if err != nil {
 				server.Logs <- fmt.Sprintf("--> TCP SERVER Error writing file data: %v", err)
