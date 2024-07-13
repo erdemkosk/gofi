@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/erdemkosk/gofi/internal/logic"
 )
 
 type TcpServer struct {
@@ -127,8 +129,11 @@ func (server *TcpServer) handleConnection() {
 
 	server.Logs <- fmt.Sprintf("--> TCP SERVER Received file metadata: %+v", metaData)
 
+	server.Logs <- fmt.Sprintf("--> !!!!!!! %s", metaData.FileName)
+	server.Logs <- fmt.Sprintf("--> !!!!!!! %s", filepath.Join("/Desktop", metaData.FileName))
+
 	// Dosya yazma işlemi
-	filePath := filepath.Join("/Desktop", metaData.FileName) // Örneğin, "/Desktop" klasörüne kaydedilecek
+	filePath := filepath.Join(logic.GetPath("/Desktop"), metaData.FileName) // Örneğin, "/Desktop" klasörüne kaydedilecek
 	file, err := os.Create(filePath)
 	if err != nil {
 		server.Logs <- fmt.Sprintf("--> TCP SERVER Error creating file: %v", err)

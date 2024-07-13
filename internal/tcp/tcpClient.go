@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/erdemkosk/gofi/internal/logic"
 )
 
 type TcpClient struct {
@@ -40,7 +42,7 @@ func CreateNewTcpClient(ip string, port int, logs chan string) (*TcpClient, erro
 
 	// Start listening for incoming files
 
-	go client.ListenForFiles(filepath.Join(os.Getenv("HOME"), "Desktop"))
+	go client.ListenForFiles(logic.GetPath("/Desktop"))
 
 	return client, nil
 }
