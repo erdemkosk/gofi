@@ -7,8 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
+	"sync"
 
 	"github.com/erdemkosk/gofi/internal/logic"
 )
@@ -18,6 +17,8 @@ type TcpClient struct {
 	Connection  *net.TCPConn
 	IsConnected bool
 	Logs        chan string
+	FileQueue   []string
+	wg          sync.WaitGroup
 }
 
 func CreateNewTcpClient(ip string, port int, logs chan string) (*TcpClient, error) {
@@ -38,11 +39,11 @@ func CreateNewTcpClient(ip string, port int, logs chan string) (*TcpClient, erro
 		Address:     *tcpAddr,
 		IsConnected: true,
 		Logs:        logs,
+		FileQueue:   make([]string, 0),
 	}
 
 	// Start listening for incoming files
-
-	go client.ListenForFiles(logic.GetPath("/Desktop"))
+	go client.SendFileToServer(logic.GetPath("/Desktop"))
 
 	return client, nil
 }
@@ -57,78 +58,26 @@ func (client *TcpClient) CloseConnection() {
 	client.Logs <- "--> TCP CLIENT closed successfully!"
 }
 
-func (client *TcpClient) ListenForFiles(destinationPath string) {
+func (client *TcpClient) SendFileToServer(destinationPath string) {
+	client.FileQueue = append(client.FileQueue, destinationPath)
 	for {
-		err := client.ReceiveFile(destinationPath)
-		if err != nil {
-			client.Logs <- fmt.Sprintf("--> TCP CLIENT Error receiving file: %v", err)
+		if len(client.FileQueue) > 0 {
+			client.wg.Add(1)
+			filePath := client.FileQueue[0]
+			client.FileQueue = client.FileQueue[1:]
+
+			go func(path string) {
+				defer client.wg.Done()
+				err := client.sendFile(path)
+				if err != nil {
+					client.Logs <- fmt.Sprintf("--> TCP CLIENT Error sending file: %v", err)
+				}
+			}(filePath)
 		}
 	}
 }
 
-func (client *TcpClient) ReceiveFile(destinationPath string) error {
-	// Read metadata size
-	metaDataSizeBuff := make([]byte, 16)
-	_, err := client.Connection.Read(metaDataSizeBuff)
-	if err != nil {
-		return fmt.Errorf("error reading metadata size: %v", err)
-	}
-
-	metaDataSize, err := strconv.Atoi(strings.TrimSpace(string(metaDataSizeBuff)))
-	if err != nil {
-		return fmt.Errorf("error converting metadata size: %v", err)
-	}
-
-	// Read metadata
-	metaDataBuff := make([]byte, metaDataSize)
-	_, err = client.Connection.Read(metaDataBuff)
-	if err != nil {
-		return fmt.Errorf("error reading metadata: %v", err)
-	}
-
-	var metaData FileMetadata
-	err = json.Unmarshal(metaDataBuff, &metaData)
-	if err != nil {
-		return fmt.Errorf("error unmarshalling metadata: %v", err)
-	}
-
-	client.Logs <- fmt.Sprintf("--> TCP CLIENT Received file metadata: %+v", metaData)
-
-	// Prepare destination file
-	filePath := filepath.Join(destinationPath, metaData.FileName)
-	file, err := os.Create(filePath)
-	if err != nil {
-		return fmt.Errorf("error creating file: %v", err)
-	}
-	defer file.Close()
-
-	// Receive file data
-	recvBuffer := make([]byte, 1024)
-	totalReceived := 0
-	for {
-		n, err := client.Connection.Read(recvBuffer)
-		if err != nil {
-			if err == io.EOF {
-				client.Logs <- "--> TCP CLIENT File receiving completed"
-				break
-			}
-			return fmt.Errorf("error reading file data: %v", err)
-		}
-
-		_, err = file.Write(recvBuffer[:n])
-		if err != nil {
-			return fmt.Errorf("error writing file data: %v", err)
-		}
-
-		totalReceived += n
-	}
-
-	client.Logs <- fmt.Sprintf("--> TCP CLIENT Received %d bytes of file data", totalReceived)
-
-	return nil
-}
-
-func (client *TcpClient) SendFileToServer(filePath string) error {
+func (client *TcpClient) sendFile(filePath string) error {
 	// Open the file
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -155,9 +104,7 @@ func (client *TcpClient) SendFileToServer(filePath string) error {
 	}
 
 	// Send metadata size
-	// Send metadata size
-	metaDataSize := strconv.Itoa(len(metaDataBytes))
-	metaDataSize = fmt.Sprintf("%016s", metaDataSize)
+	metaDataSize := fmt.Sprintf("%016d", len(metaDataBytes))
 	_, err = client.Connection.Write([]byte(metaDataSize))
 	if err != nil {
 		return fmt.Errorf("error sending metadata size: %v %s", err, metaDataSize)
@@ -193,4 +140,12 @@ func (client *TcpClient) SendFileToServer(filePath string) error {
 	client.Logs <- fmt.Sprintf("--> TCP CLIENT Sent %d bytes of file data", totalSent)
 
 	return nil
+}
+
+func (client *TcpClient) EnqueueFile(filePath string) {
+	client.FileQueue = append(client.FileQueue, filePath)
+}
+
+func (client *TcpClient) WaitUntilFinished() {
+	client.wg.Wait()
 }

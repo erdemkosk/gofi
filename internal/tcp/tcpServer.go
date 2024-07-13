@@ -108,7 +108,10 @@ func (server *TcpServer) handleConnection() {
 			return
 		}
 
-		metaDataSize, err := strconv.Atoi(strings.TrimSpace(string(metaDataSizeBuff)))
+		// Convert metadata size buffer to integer
+		metaDataSizeStr := strings.TrimSpace(string(metaDataSizeBuff))
+		server.Logs <- fmt.Sprintf("--> TCP SERVER Error converting metadata size: %v", err)
+		metaDataSize, err := strconv.Atoi(metaDataSizeStr)
 		if err != nil {
 			server.Logs <- fmt.Sprintf("--> TCP SERVER Error converting metadata size: %v", err)
 			return
