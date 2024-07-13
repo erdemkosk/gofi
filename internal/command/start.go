@@ -31,6 +31,8 @@ var (
 	parentMap                      map[*tview.TreeNode]*tview.TreeNode
 	listDropDown                   *tview.DropDown
 	currentPath                    string
+	tcpServer                      *tcp.TcpServer
+	tcpClient                      *tcp.TcpClient
 )
 
 func (command StartCommand) Execute(cmd *cobra.Command, args []string) {
@@ -51,7 +53,7 @@ func (command StartCommand) Execute(cmd *cobra.Command, args []string) {
 	go listenForTcpConnection()
 
 	udpServer, udpClient := udp.CreateUdpPeers(logChannel)
-	tcpServer, _ := tcp.CreateNewTcpServer(logic.GetLocalIP(), config.TCP_PORT, logChannel)
+	tcpServer, _ = tcp.CreateNewTcpServer(logic.GetLocalIP(), config.TCP_PORT, logChannel)
 
 	defer udpServer.CloseConnection()
 	defer udpClient.CloseConnection()
@@ -220,12 +222,14 @@ func connectButtonHandler() {
 
 		msg := udp.ConvertJsonToUdpMessage([]byte(option), logChannel)
 
-		client, err := tcp.CreateNewTcpClient(msg.IP, msg.Port, logChannel)
+		var err error
+
+		tcpClient, err = tcp.CreateNewTcpClient(msg.IP, msg.Port, logChannel)
 
 		messageChannel := make(chan string)
 
 		go func() {
-			client.SendMessage("Hello, Server!", messageChannel)
+			tcpClient.SendMessage("Hello, Server!", messageChannel)
 		}()
 
 		if err != nil {
@@ -246,6 +250,11 @@ func connectButtonHandler() {
 
 func changeUiState() {
 	close(stopUnusedPeersChannel)
+
+	if tcpServer != nil {
+
+		go tcpServer.ReceiveFile()
+	}
 
 	desktopPath := logic.GetPath("/Desktop")
 
@@ -327,6 +336,9 @@ func changeUiState() {
 				}
 			}
 			return nil
+		} else if event.Key() == tcell.KeyEscape {
+
+			return nil
 		}
 
 		return event
@@ -334,4 +346,20 @@ func changeUiState() {
 
 	addNodes(tree.GetRoot(), desktopPath)
 	app.SetFocus(tree)
+}
+
+func sendSelectedFiles() {
+	for filePath := range selectedNodes {
+		fileName := filepath.Base(filePath)
+		// Dosya gönderme işlemi yapılabilir
+		logChannel <- fmt.Sprintf("Sending file: %s", fileName)
+		// İstemci tarafından seçilen dosyaları gönder
+		// Burada dosyaların TCP istemcisine gönderilmesi için gerekli işlemler yapılabilir
+		// Örneğin:
+		if tcpClient != nil {
+			tcpClient.SendFile(filePath)
+		} else if tcpServer != nil {
+			tcpServer.SendFileToClient(filePath)
+		}
+	}
 }
