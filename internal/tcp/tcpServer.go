@@ -138,7 +138,6 @@ func (server *TcpServer) handleConnection() {
 			server.Logs <- fmt.Sprintf("--> TCP SERVER Error creating file: %v", err)
 			return
 		}
-		defer file.Close()
 
 		// File data receiving loop
 		totalReceived := int64(0)
@@ -147,25 +146,29 @@ func (server *TcpServer) handleConnection() {
 			n, err := server.currentConnection.Read(recvBuff)
 			if err != nil && err != io.EOF {
 				server.Logs <- fmt.Sprintf("--> TCP SERVER Error reading file data: %v", err)
+				file.Close() // Dosyayı kapat
 				return
 			}
 
 			if n == 0 {
 				server.Logs <- "--> TCP SERVER No more data received unexpectedly"
+				file.Close() // Dosyayı kapat
 				return
 			}
 
 			_, err = file.Write(recvBuff[:n])
 			if err != nil {
 				server.Logs <- fmt.Sprintf("--> TCP SERVER Error writing file data: %v", err)
+				file.Close() // Dosyayı kapat
 				return
 			}
 
 			totalReceived += int64(n)
 		}
 
-		server.Logs <- "--> TCP SERVER File receiving completed"
+		file.Close() // Dosyayı kapat
 
+		server.Logs <- "--> TCP SERVER File receiving completed"
 	}
 }
 
