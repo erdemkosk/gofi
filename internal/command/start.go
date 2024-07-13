@@ -346,7 +346,7 @@ func SendSelectedFiles() {
 		// Burada dosyaların TCP istemcisine gönderilmesi için gerekli işlemler yapılabilir
 		// Örneğin:
 		if tcpClient != nil {
-			tcpClient.SendFileToServer(filePath)
+			go tcpClient.SendFileToServer(filePath)
 
 		} else if tcpServer != nil {
 			err := tcpServer.SendFileToClient(filePath)

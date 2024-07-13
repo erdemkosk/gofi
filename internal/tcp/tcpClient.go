@@ -59,6 +59,7 @@ func (client *TcpClient) SendFileToServer(destinationPath string) {
 	client.Logs <- fmt.Sprintf("--> !!!!!!!! %s", destinationPath)
 
 	for len(client.FileQueue) > 0 {
+		client.Logs <- fmt.Sprintf("--> LEN: %v", len(client.FileQueue))
 		filePath := client.FileQueue[0]
 		client.FileQueue = client.FileQueue[1:]
 
@@ -132,6 +133,11 @@ func (client *TcpClient) sendFile(filePath string) error {
 		}
 
 		totalSent += n
+	}
+
+	_, err = client.Connection.Write([]byte("EOF"))
+	if err != nil {
+		return fmt.Errorf("error sending delimiter: %v", err)
 	}
 
 	client.Logs <- fmt.Sprintf("--> Sent %d bytes of file data for: %s", totalSent, fileInfo.Name())

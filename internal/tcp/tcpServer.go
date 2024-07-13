@@ -54,7 +54,7 @@ func (server *TcpServer) Listen(stop chan bool, connectionEstablished chan<- boo
 			server.CloseConnection()
 			return nil
 		default:
-			server.Connection.SetDeadline(time.Now().Add(5 * time.Second))
+			server.Connection.SetDeadline(time.Now().Add(10 * time.Second))
 
 			conn, err := server.Connection.AcceptTCP()
 			if err != nil {
@@ -155,6 +155,11 @@ func (server *TcpServer) handleConnection() {
 				server.Logs <- "--> TCP SERVER No more data received unexpectedly"
 				file.Close() // Dosyayı kapat
 				return
+			}
+
+			if string(recvBuff[:n]) == "EOF" {
+				// End of file received
+				break
 			}
 
 			_, err = file.Write(recvBuff[:n])
