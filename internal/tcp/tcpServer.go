@@ -104,13 +104,11 @@ func (server *TcpServer) handleConnection() {
 		metaDataSizeBuff := make([]byte, 16)
 		_, err := io.ReadFull(server.currentConnection, metaDataSizeBuff)
 		if err != nil {
-			server.Logs <- fmt.Sprintf("--> TCP SERVER Error reading metadata size: %v", err)
+			server.Logs <- fmt.Sprintf("--> TCP SERVER Error reading metadata buff: %v", err)
 			return
 		}
-
-		// Convert metadata size buffer to integer
+		server.Logs <- fmt.Sprintf("--> OLM %s", string(metaDataSizeBuff))
 		metaDataSizeStr := strings.TrimSpace(string(metaDataSizeBuff))
-		server.Logs <- fmt.Sprintf("--> TCP SERVER Error converting metadata size: %v", err)
 		metaDataSize, err := strconv.Atoi(metaDataSizeStr)
 		if err != nil {
 			server.Logs <- fmt.Sprintf("--> TCP SERVER Error converting metadata size: %v", err)

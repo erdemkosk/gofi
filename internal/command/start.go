@@ -341,11 +341,12 @@ func SendSelectedFiles() {
 		fileName := filepath.Base(filePath)
 		// Dosya gönderme işlemi yapılabilir
 		logChannel <- fmt.Sprintf("Sending file: %s", fileName)
+		logChannel <- fmt.Sprintf("NASIIII")
 		// İstemci tarafından seçilen dosyaları gönder
 		// Burada dosyaların TCP istemcisine gönderilmesi için gerekli işlemler yapılabilir
 		// Örneğin:
 		if tcpClient != nil {
-			go tcpClient.SendFileToServer(filePath)
+			tcpClient.SendFileToServer(filePath)
 
 		} else if tcpServer != nil {
 			err := tcpServer.SendFileToClient(filePath)
