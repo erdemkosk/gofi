@@ -60,27 +60,26 @@ func (client *TcpClient) SendFileToServer(destinationPath string) {
 	client.Logs <- fmt.Sprintf("--> Queued file: %s", destinationPath)
 	client.mutex.Unlock()
 
-	go func() {
-		for {
-			client.mutex.Lock()
-			if len(client.FileQueue) == 0 {
-				client.mutex.Unlock()
-				break
-			}
-			filePath := client.FileQueue[0]
-			client.FileQueue = client.FileQueue[1:]
+	for {
+		client.mutex.Lock()
+		if len(client.FileQueue) == 0 {
 			client.mutex.Unlock()
+			break
+		}
+		filePath := client.FileQueue[0]
+		client.FileQueue = client.FileQueue[1:]
+		client.mutex.Unlock()
 
-			err := client.sendFile(filePath)
-			if err != nil {
-				client.Logs <- fmt.Sprintf("--> TCP CLIENT Error sending file: %v", err)
-			}
-
-			time.Sleep(1 * time.Second) // 1 saniye ara
+		err := client.sendFile(filePath)
+		if err != nil {
+			client.Logs <- fmt.Sprintf("--> TCP CLIENT Error sending file: %v", err)
 		}
 
-		client.Logs <- "--> All files sent successfully!"
-	}()
+		time.Sleep(1 * time.Second) // 1 saniye ara
+	}
+
+	client.Logs <- "--> All files sent successfully!"
+
 }
 
 func (client *TcpClient) sendFile(filePath string) error {
