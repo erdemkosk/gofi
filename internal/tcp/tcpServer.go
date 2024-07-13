@@ -169,6 +169,13 @@ func (server *TcpServer) handleConnection() {
 		file.Close() // Dosyayı kapat
 
 		server.Logs <- "--> TCP SERVER File receiving completed"
+
+		// Send ack to client to indicate file reception completion
+		_, err = server.currentConnection.Write([]byte{1})
+		if err != nil {
+			server.Logs <- fmt.Sprintf("--> TCP SERVER Error sending ack: %v", err)
+			return
+		}
 	}
 }
 

@@ -190,5 +190,12 @@ func (client *TcpClient) SendFileToServer(filePath string) error {
 
 	client.Logs <- fmt.Sprintf("--> TCP CLIENT Sent %d bytes of file data", totalSent)
 
+	// Wait for server response before sending another file
+	ack := make([]byte, 1)
+	_, err = client.Connection.Read(ack)
+	if err != nil {
+		return fmt.Errorf("error receiving server ack: %v", err)
+	}
+
 	return nil
 }
