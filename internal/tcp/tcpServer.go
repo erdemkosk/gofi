@@ -23,9 +23,9 @@ type TcpServer struct {
 }
 
 type FileMetadata struct {
-	FileName string
-	FileType string
-	FileSize int64
+	FileName string `json:"fileName"`
+	FileType string `json:"fileType"`
+	FileSize int64  `json:"fileSize"`
 }
 
 func CreateNewTcpServer(ip string, port int, logs chan string) (*TcpServer, error) {

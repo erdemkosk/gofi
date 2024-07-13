@@ -197,5 +197,10 @@ func (client *TcpClient) SendFileToServer(filePath string) error {
 		return fmt.Errorf("error receiving server ack: %v", err)
 	}
 
+	// Check if server acknowledged successfully
+	if ack[0] != '1' {
+		return fmt.Errorf("server did not acknowledge file transfer")
+	}
+
 	return nil
 }
