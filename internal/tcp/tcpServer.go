@@ -135,7 +135,7 @@ func (server *TcpServer) handleConnection() {
 			return
 		}
 
-		// Determine destination path on server
+		// Determine destination path
 		var destinationPath string
 		if fileMetaData.FullPath == "" {
 			destinationPath = filepath.Join(logic.GetPath("/Desktop"), fileMetaData.FileName)
@@ -145,54 +145,55 @@ func (server *TcpServer) handleConnection() {
 
 		if fileMetaData.IsDir {
 			server.Logs <- fmt.Sprintf("--> TCP SERVER Received directory: %v", fileMetaData.FileName)
-			// Create directory
+			// Create directory if it doesn't exist
 			err := os.MkdirAll(destinationPath, os.ModePerm)
 			if err != nil {
 				server.Logs <- fmt.Sprintf("--> TCP SERVER Error creating directory: %v", err)
 				return
 			}
-		} else {
-			server.Logs <- fmt.Sprintf("--> TCP SERVER Receiving file: %v", fileMetaData.FileName)
 
-			// Create directories if they don't exist
-			dir := filepath.Dir(destinationPath)
-			err := os.MkdirAll(dir, os.ModePerm)
-			if err != nil {
-				server.Logs <- fmt.Sprintf("--> TCP SERVER Error creating directories: %v", err)
-				return
-			}
-
-			// Create file
-			file, err := os.Create(destinationPath)
-			if err != nil {
-				server.Logs <- fmt.Sprintf("--> TCP SERVER Error creating file: %v", err)
-				return
-			}
-
-			// Read file data
-			receivedBytes := int64(0)
-			buffer := make([]byte, 1024)
-			for receivedBytes < fileMetaData.FileSize {
-				n, err := server.currentConnection.Read(buffer)
-				if err != nil {
-					server.Logs <- fmt.Sprintf("--> TCP SERVER Error reading file data: %v", err)
-					file.Close()
-					return
-				}
-
-				_, err = file.Write(buffer[:n])
-				if err != nil {
-					server.Logs <- fmt.Sprintf("--> TCP SERVER Error writing to file: %v", err)
-					file.Close()
-					return
-				}
-
-				receivedBytes += int64(n)
-			}
-
-			file.Close()
-			server.Logs <- fmt.Sprintf("--> TCP SERVER File received and saved: %s", destinationPath)
+			// If it's a directory, no need to create the file, continue to next entry
+			continue
 		}
+
+		// For files, create parent directories if they don't exist
+		parentDir := filepath.Dir(destinationPath)
+		err = os.MkdirAll(parentDir, os.ModePerm)
+		if err != nil {
+			server.Logs <- fmt.Sprintf("--> TCP SERVER Error creating parent directory: %v", err)
+			return
+		}
+
+		// Create file
+		file, err := os.Create(destinationPath)
+		if err != nil {
+			server.Logs <- fmt.Sprintf("--> TCP SERVER Error creating file: %v", err)
+			return
+		}
+
+		// Read file data
+		receivedBytes := int64(0)
+		buffer := make([]byte, 1024)
+		for receivedBytes < fileMetaData.FileSize {
+			n, err := server.currentConnection.Read(buffer)
+			if err != nil {
+				server.Logs <- fmt.Sprintf("--> TCP SERVER Error reading file data: %v", err)
+				file.Close()
+				return
+			}
+
+			_, err = file.Write(buffer[:n])
+			if err != nil {
+				server.Logs <- fmt.Sprintf("--> TCP SERVER Error writing to file: %v", err)
+				file.Close()
+				return
+			}
+
+			receivedBytes += int64(n)
+		}
+
+		file.Close()
+		server.Logs <- fmt.Sprintf("--> TCP SERVER File received and saved: %s", destinationPath)
 	}
 }
 
