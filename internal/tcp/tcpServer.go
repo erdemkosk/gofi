@@ -27,7 +27,7 @@ type FileMetadata struct {
 	FileType string `json:"fileType"`
 	FileSize int64  `json:"fileSize"`
 	IsDir    bool   `json:"isDir"`
-	FullPath string
+	FullPath string `json:"fullPath"`
 }
 
 func CreateNewTcpServer(ip string, port int, logs chan string) (*TcpServer, error) {
@@ -103,97 +103,89 @@ func (server *TcpServer) handleConnection() {
 
 	for {
 		// Metadata size buffer reading
-		metaDataSizeBuff := make([]byte, 16)
-		_, err := io.ReadFull(server.currentConnection, metaDataSizeBuff)
+		sizeBuffer := make([]byte, 16)
+		_, err := io.ReadFull(server.currentConnection, sizeBuffer)
 		if err != nil {
-			server.Logs <- fmt.Sprintf("--> TCP SERVER Error reading metadata buff: %v", err)
+			if err == io.EOF {
+				server.Logs <- "--> TCP SERVER Connection closed by client"
+				break
+			}
+			server.Logs <- fmt.Sprintf("--> TCP SERVER Error reading metadata size: %v", err)
 			return
 		}
-		server.Logs <- fmt.Sprintf("--> OLM %s", string(metaDataSizeBuff))
-		metaDataSizeStr := strings.TrimSpace(string(metaDataSizeBuff))
-		metaDataSize, err := strconv.Atoi(metaDataSizeStr)
+		metadataSize, err := strconv.ParseInt(strings.TrimSpace(string(sizeBuffer)), 10, 64)
 		if err != nil {
 			server.Logs <- fmt.Sprintf("--> TCP SERVER Error converting metadata size: %v", err)
 			return
 		}
 
-		// Metadata reading
-		metaDataBuff := make([]byte, metaDataSize)
-		_, err = io.ReadFull(server.currentConnection, metaDataBuff)
+		// Metadata buffer reading
+		metaDataBuffer := make([]byte, metadataSize)
+		_, err = io.ReadFull(server.currentConnection, metaDataBuffer)
 		if err != nil {
 			server.Logs <- fmt.Sprintf("--> TCP SERVER Error reading metadata: %v", err)
 			return
 		}
 
-		var metaData FileMetadata
-		err = json.Unmarshal(metaDataBuff, &metaData)
+		// Metadata unmarshalling
+		var fileMetaData FileMetadata
+		err = json.Unmarshal(metaDataBuffer, &fileMetaData)
 		if err != nil {
 			server.Logs <- fmt.Sprintf("--> TCP SERVER Error unmarshalling metadata: %v", err)
 			return
 		}
 
-		server.Logs <- fmt.Sprintf("--> TCP SERVER Received file metadata: %+v", metaData)
+		// Determine destination path
+		var destinationPath string
+		if fileMetaData.FullPath == "" {
+			destinationPath = filepath.Join(logic.GetPath("/Desktop"), fileMetaData.FileName)
+		} else {
+			destinationPath = filepath.Join(logic.GetPath("/Desktop"), fileMetaData.FullPath, fileMetaData.FileName)
+		}
 
-		// File or directory processing
-		if metaData.IsDir {
-			err = server.createDirectory(metaData)
+		if fileMetaData.IsDir {
+			server.Logs <- fmt.Sprintf("--> TCP SERVER Received directory: %v", fileMetaData.FileName)
+			// Create directory
+			err := os.MkdirAll(destinationPath, os.ModePerm)
 			if err != nil {
 				server.Logs <- fmt.Sprintf("--> TCP SERVER Error creating directory: %v", err)
 				return
 			}
 		} else {
-			err = server.receiveFile(metaData)
+			server.Logs <- fmt.Sprintf("--> TCP SERVER Receiving file: %v", fileMetaData.FileName)
+
+			// Create file
+			file, err := os.Create(destinationPath)
 			if err != nil {
-				server.Logs <- fmt.Sprintf("--> TCP SERVER Error receiving file: %v", err)
+				server.Logs <- fmt.Sprintf("--> TCP SERVER Error creating file: %v", err)
 				return
 			}
+
+			// Read file data
+			receivedBytes := int64(0)
+			buffer := make([]byte, 1024)
+			for receivedBytes < fileMetaData.FileSize {
+				n, err := server.currentConnection.Read(buffer)
+				if err != nil {
+					server.Logs <- fmt.Sprintf("--> TCP SERVER Error reading file data: %v", err)
+					file.Close()
+					return
+				}
+
+				_, err = file.Write(buffer[:n])
+				if err != nil {
+					server.Logs <- fmt.Sprintf("--> TCP SERVER Error writing to file: %v", err)
+					file.Close()
+					return
+				}
+
+				receivedBytes += int64(n)
+			}
+
+			file.Close()
+			server.Logs <- fmt.Sprintf("--> TCP SERVER File received and saved: %s", destinationPath)
 		}
 	}
-}
-
-func (server *TcpServer) createDirectory(metaData FileMetadata) error {
-	dirPath := filepath.Join(logic.GetPath("/Desktop"), metaData.FileName)
-	err := os.MkdirAll(dirPath, os.ModePerm)
-	if err != nil {
-		return fmt.Errorf("error creating directory: %v", err)
-	}
-	server.Logs <- fmt.Sprintf("--> TCP SERVER Directory created: %s", dirPath)
-	return nil
-}
-
-func (server *TcpServer) receiveFile(metaData FileMetadata) error {
-	filePath := filepath.Join(logic.GetPath("/Desktop"), metaData.FileName)
-	file, err := os.Create(filePath)
-	if err != nil {
-		return fmt.Errorf("error creating file: %v", err)
-	}
-	defer file.Close()
-
-	// File data receiving loop
-	totalReceived := int64(0)
-	recvBuff := make([]byte, 1024)
-	for totalReceived < metaData.FileSize {
-		n, err := server.currentConnection.Read(recvBuff)
-		if err != nil && err != io.EOF {
-			return fmt.Errorf("error reading file data: %v", err)
-		}
-
-		if n == 0 {
-			server.Logs <- "--> TCP SERVER No more data received unexpectedly"
-			return nil
-		}
-
-		_, err = file.Write(recvBuff[:n])
-		if err != nil {
-			return fmt.Errorf("error writing file data: %v", err)
-		}
-
-		totalReceived += int64(n)
-	}
-
-	server.Logs <- fmt.Sprintf("--> TCP SERVER File received successfully: %s", filePath)
-
-	return nil
 }
 
 func (server *TcpServer) SendFileToClient(filePath string) error {
