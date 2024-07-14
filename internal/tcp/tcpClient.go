@@ -11,6 +11,14 @@ import (
 	"time"
 )
 
+type FileMetadata struct {
+	FileName string `json:"fileName"`
+	FileType string `json:"fileType"`
+	FileSize int64  `json:"fileSize"`
+	IsDir    bool   `json:"isDir"`
+	FullPath string `json:"fullPath"`
+}
+
 type TcpClient struct {
 	Address     net.TCPAddr
 	Connection  *net.TCPConn
@@ -133,9 +141,11 @@ func (client *TcpClient) sendDirectory(dirPath string, relativePath string) erro
 
 	for _, entry := range entries {
 		entryPath := filepath.Join(dirPath, entry.Name())
-		client.FileQueue = append(client.FileQueue, entryPath)
-		newRelativePath := filepath.Join(relativePath, filepath.Base(dirPath))
-		client.sendFileOrDirectory(entryPath, newRelativePath)
+		newRelativePath := filepath.Join(relativePath, filepath.Base(dirPath), entry.Name())
+		err := client.sendFileOrDirectory(entryPath, newRelativePath)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
