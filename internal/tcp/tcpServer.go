@@ -135,7 +135,7 @@ func (server *TcpServer) handleConnection() {
 			return
 		}
 
-		// Determine destination path
+		// Determine destination path on server
 		var destinationPath string
 		if fileMetaData.FullPath == "" {
 			destinationPath = filepath.Join(logic.GetPath("/Desktop"), fileMetaData.FileName)
@@ -153,6 +153,14 @@ func (server *TcpServer) handleConnection() {
 			}
 		} else {
 			server.Logs <- fmt.Sprintf("--> TCP SERVER Receiving file: %v", fileMetaData.FileName)
+
+			// Create directories if they don't exist
+			dir := filepath.Dir(destinationPath)
+			err := os.MkdirAll(dir, os.ModePerm)
+			if err != nil {
+				server.Logs <- fmt.Sprintf("--> TCP SERVER Error creating directories: %v", err)
+				return
+			}
 
 			// Create file
 			file, err := os.Create(destinationPath)
