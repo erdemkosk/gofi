@@ -88,13 +88,13 @@ func (client *TcpClient) sendFileOrDirectory(path string, relativePath string) e
 	}
 
 	if fileInfo.IsDir() {
-		return client.sendDirectory(path, relativePath)
+		return client.sendDirectory(path)
 	} else {
 		return client.sendFile(path, relativePath)
 	}
 }
 
-func (client *TcpClient) sendDirectory(dirPath string, relativePath string) error {
+func (client *TcpClient) sendDirectory(dirPath string) error {
 	client.Logs <- fmt.Sprintf("--> Sending directory: %s", dirPath)
 
 	// Prepare metadata
@@ -103,7 +103,6 @@ func (client *TcpClient) sendDirectory(dirPath string, relativePath string) erro
 		FileType: "",
 		FileSize: 0,
 		IsDir:    true,
-		FullPath: relativePath,
 	}
 
 	metaDataBytes, err := json.Marshal(metaData)
@@ -133,11 +132,8 @@ func (client *TcpClient) sendDirectory(dirPath string, relativePath string) erro
 
 	for _, entry := range entries {
 		entryPath := filepath.Join(dirPath, entry.Name())
-		newRelativePath := filepath.Join(relativePath, filepath.Base(dirPath), entry.Name())
-		err := client.sendFileOrDirectory(entryPath, newRelativePath)
-		if err != nil {
-			return err
-		}
+		client.SendFileToServer(entryPath)
+
 	}
 
 	return nil
