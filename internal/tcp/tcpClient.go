@@ -11,14 +11,6 @@ import (
 	"time"
 )
 
-type FileMetadata struct {
-	FileName string `json:"fileName"`
-	FileType string `json:"fileType"`
-	FileSize int64  `json:"fileSize"`
-	IsDir    bool   `json:"isDir"`
-	FullPath string `json:"fullPath"`
-}
-
 type TcpClient struct {
 	Address     net.TCPAddr
 	Connection  *net.TCPConn
