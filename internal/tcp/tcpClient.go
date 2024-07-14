@@ -57,7 +57,7 @@ func (client *TcpClient) CloseConnection() {
 func (client *TcpClient) SendFileToServer(destinationPath string) {
 	client.mutex.Lock()
 	client.FileQueue = append(client.FileQueue, destinationPath)
-	client.Logs <- fmt.Sprintf("--> Queued file: %s", destinationPath)
+	client.Logs <- fmt.Sprintf("--> Queued file or directory: %s", destinationPath)
 	client.mutex.Unlock()
 
 	for {
@@ -70,16 +70,42 @@ func (client *TcpClient) SendFileToServer(destinationPath string) {
 		client.FileQueue = client.FileQueue[1:]
 		client.mutex.Unlock()
 
-		err := client.sendFile(filePath)
+		err := client.sendFileOrDirectory(filePath)
 		if err != nil {
-			client.Logs <- fmt.Sprintf("--> TCP CLIENT Error sending file: %v", err)
+			client.Logs <- fmt.Sprintf("--> TCP CLIENT Error sending file or directory: %v", err)
 		}
 
 		time.Sleep(1 * time.Second) // 1 saniye ara
 	}
 
-	client.Logs <- "--> All files sent successfully!"
+	client.Logs <- "--> All files and directories sent successfully!"
+}
 
+func (client *TcpClient) sendFileOrDirectory(path string) error {
+	fileInfo, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("error getting file information: %v", err)
+	}
+
+	if fileInfo.IsDir() {
+		return client.sendDirectoryContents(path)
+	} else {
+		return client.sendFile(path)
+	}
+}
+
+func (client *TcpClient) sendDirectoryContents(dirPath string) error {
+	entries, err := os.ReadDir(dirPath)
+	if err != nil {
+		return fmt.Errorf("error reading directory: %v", err)
+	}
+
+	for _, entry := range entries {
+		entryPath := filepath.Join(dirPath, entry.Name())
+		client.FileQueue = append(client.FileQueue, entryPath)
+	}
+
+	return nil
 }
 
 func (client *TcpClient) sendFile(filePath string) error {
@@ -102,6 +128,7 @@ func (client *TcpClient) sendFile(filePath string) error {
 		FileName: fileInfo.Name(),
 		FileType: filepath.Ext(fileInfo.Name()),
 		FileSize: fileInfo.Size(),
+		IsDir:    false,
 	}
 
 	metaDataBytes, err := json.Marshal(metaData)
