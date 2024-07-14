@@ -27,6 +27,7 @@ type FileMetadata struct {
 	FileType string `json:"fileType"`
 	FileSize int64  `json:"fileSize"`
 	IsDir    bool   `json:"isDir"`
+	FilePath string `json:"filePath"`
 }
 
 func CreateNewTcpServer(ip string, port int, logs chan string) (*TcpServer, error) {
@@ -133,46 +134,66 @@ func (server *TcpServer) handleConnection() {
 
 		server.Logs <- fmt.Sprintf("--> TCP SERVER Received file metadata: %+v", metaData)
 
-		// File writing
-		filePath := filepath.Join(logic.GetPath("/Desktop"), metaData.FileName)
-		file, err := os.Create(filePath)
-		if err != nil {
-			server.Logs <- fmt.Sprintf("--> TCP SERVER Error creating file: %v", err)
-			return
-		}
-
-		// File data receiving loop
-		totalReceived := int64(0)
-		recvBuff := make([]byte, 1024)
-		for totalReceived < metaData.FileSize {
-			n, err := server.currentConnection.Read(recvBuff)
-			if err != nil && err != io.EOF {
-				server.Logs <- fmt.Sprintf("--> TCP SERVER Error reading file data: %v", err)
-				file.Close() // Dosyayı kapat
-				return
-			}
-
-			if n == 0 {
-				server.Logs <- "--> TCP SERVER No more data received unexpectedly"
-				file.Close() // Dosyayı kapat
-				return
-			}
-
-			_, err = file.Write(recvBuff[:n])
+		// File or directory processing
+		if metaData.IsDir {
+			err = server.createDirectory(metaData)
 			if err != nil {
-				server.Logs <- fmt.Sprintf("--> TCP SERVER Error writing file data: %v", err)
-				file.Close() // Dosyayı kapat
+				server.Logs <- fmt.Sprintf("--> TCP SERVER Error creating directory: %v", err)
 				return
 			}
+		} else {
+			err = server.receiveFile(metaData)
+			if err != nil {
+				server.Logs <- fmt.Sprintf("--> TCP SERVER Error receiving file: %v", err)
+				return
+			}
+		}
+	}
+}
 
-			totalReceived += int64(n)
+func (server *TcpServer) createDirectory(metaData FileMetadata) error {
+	dirPath := filepath.Join(logic.GetPath("/Desktop"), metaData.FileName)
+	err := os.MkdirAll(dirPath, os.ModePerm)
+	if err != nil {
+		return fmt.Errorf("error creating directory: %v", err)
+	}
+	server.Logs <- fmt.Sprintf("--> TCP SERVER Directory created: %s", dirPath)
+	return nil
+}
+
+func (server *TcpServer) receiveFile(metaData FileMetadata) error {
+	filePath := filepath.Join(logic.GetPath("/Desktop"), metaData.FileName)
+	file, err := os.Create(filePath)
+	if err != nil {
+		return fmt.Errorf("error creating file: %v", err)
+	}
+	defer file.Close()
+
+	// File data receiving loop
+	totalReceived := int64(0)
+	recvBuff := make([]byte, 1024)
+	for totalReceived < metaData.FileSize {
+		n, err := server.currentConnection.Read(recvBuff)
+		if err != nil && err != io.EOF {
+			return fmt.Errorf("error reading file data: %v", err)
 		}
 
-		file.Close() // Dosyayı kapat
+		if n == 0 {
+			server.Logs <- "--> TCP SERVER No more data received unexpectedly"
+			return nil
+		}
 
-		server.Logs <- "--> TCP SERVER File receiving completed"
+		_, err = file.Write(recvBuff[:n])
+		if err != nil {
+			return fmt.Errorf("error writing file data: %v", err)
+		}
 
+		totalReceived += int64(n)
 	}
+
+	server.Logs <- fmt.Sprintf("--> TCP SERVER File received successfully: %s", filePath)
+
+	return nil
 }
 
 func (server *TcpServer) SendFileToClient(filePath string) error {
