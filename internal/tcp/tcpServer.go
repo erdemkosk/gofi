@@ -143,7 +143,7 @@ func (server *TcpServer) handleConnection() {
 			destinationPath = filepath.Join(logic.GetPath("/Desktop"), fileMetaData.FullPath)
 		}
 
-		server.Logs <- fmt.Sprintf("--> DESTIIIIII: %v", destinationPath)
+		server.Logs <- fmt.Sprintf("--> DESTINATION: %v", destinationPath)
 
 		if fileMetaData.IsDir {
 			server.Logs <- fmt.Sprintf("--> TCP SERVER Received directory: %v", fileMetaData.FileName)

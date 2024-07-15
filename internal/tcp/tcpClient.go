@@ -70,9 +70,40 @@ func (client *TcpClient) SendFileToServer(destinationPath string) {
 		client.FileQueue = client.FileQueue[1:]
 		client.mutex.Unlock()
 
-		err := client.sendFileOrDirectory(filePath, "")
+		// Check if the path is a directory
+		fileInfo, err := os.Stat(filePath)
 		if err != nil {
-			client.Logs <- fmt.Sprintf("--> TCP CLIENT Error sending file or directory: %v", err)
+			client.Logs <- fmt.Sprintf("--> Error getting file info: %v", err)
+			continue
+		}
+
+		if fileInfo.IsDir() {
+			// Send the directory itself
+			err = client.sendDirectory(filePath)
+			if err != nil {
+				client.Logs <- fmt.Sprintf("--> TCP CLIENT Error sending directory %v", err)
+			}
+
+			// Recursively add all files and subdirectories to the queue
+			err = filepath.Walk(filePath, func(path string, info os.FileInfo, err error) error {
+				if err != nil {
+					return err
+				}
+				if path != filePath {
+					client.mutex.Lock()
+					client.FileQueue = append(client.FileQueue, path)
+					client.mutex.Unlock()
+				}
+				return nil
+			})
+			if err != nil {
+				client.Logs <- fmt.Sprintf("--> TCP CLIENT Error walking directory %v", err)
+			}
+		} else {
+			err = client.sendFile(filePath)
+			if err != nil {
+				client.Logs <- fmt.Sprintf("--> TCP CLIENT Error sending file %v", err)
+			}
 		}
 
 		time.Sleep(1 * time.Second) // 1 saniye ara
@@ -81,28 +112,15 @@ func (client *TcpClient) SendFileToServer(destinationPath string) {
 	client.Logs <- "--> All files and directories sent successfully!"
 }
 
-func (client *TcpClient) sendFileOrDirectory(path string, relativePath string) error {
-	fileInfo, err := os.Stat(path)
-	if err != nil {
-		return fmt.Errorf("error getting file information: %v", err)
-	}
-
-	if fileInfo.IsDir() {
-		return client.sendDirectory(path)
-	} else {
-		return client.sendFile(path, relativePath)
-	}
-}
-
 func (client *TcpClient) sendDirectory(dirPath string) error {
-	client.Logs <- fmt.Sprintf("--> Sending directory: %s", dirPath)
+	client.Logs <- fmt.Sprintf("--> Sending directory: %v", dirPath)
 
-	// Prepare metadata
+	// Prepare metadata for the directory
 	metaData := FileMetadata{
 		FileName: filepath.Base(dirPath),
-		FileType: "",
+		FileType: "directory",
 		FileSize: 0,
-		IsDir:    true,
+		FullPath: dirPath,
 	}
 
 	metaDataBytes, err := json.Marshal(metaData)
@@ -124,22 +142,10 @@ func (client *TcpClient) sendDirectory(dirPath string) error {
 		return fmt.Errorf("error sending metadata: %v", err)
 	}
 
-	// Send directory contents
-	entries, err := os.ReadDir(dirPath)
-	if err != nil {
-		return fmt.Errorf("error reading directory: %v", err)
-	}
-
-	for _, entry := range entries {
-		entryPath := filepath.Join(dirPath, entry.Name())
-		client.SendFileToServer(entryPath)
-
-	}
-
 	return nil
 }
 
-func (client *TcpClient) sendFile(filePath string, relativePath string) error {
+func (client *TcpClient) sendFile(filePath string) error {
 	client.Logs <- fmt.Sprintf("--> Sending file: %v", filePath)
 	// Open the file
 	file, err := os.Open(filePath)
@@ -159,8 +165,7 @@ func (client *TcpClient) sendFile(filePath string, relativePath string) error {
 		FileName: fileInfo.Name(),
 		FileType: filepath.Ext(fileInfo.Name()),
 		FileSize: fileInfo.Size(),
-		IsDir:    false,
-		FullPath: relativePath,
+		FullPath: filePath,
 	}
 
 	metaDataBytes, err := json.Marshal(metaData)
