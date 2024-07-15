@@ -20,6 +20,14 @@ type TcpClient struct {
 	mutex       sync.Mutex // Mutex for synchronization
 }
 
+type FileMetadata struct {
+	FileName string `json:"fileName"`
+	FileType string `json:"fileType"`
+	FileSize int64  `json:"fileSize"`
+	FullPath string `json:"fullPath"`
+	IsDir    bool   `json:"isDir"`
+}
+
 func CreateNewTcpClient(ip string, port int, logs chan string) (*TcpClient, error) {
 	tcpAddr, err := net.ResolveTCPAddr("tcp4", fmt.Sprintf("%s:%d", ip, port))
 	if err != nil {
@@ -60,6 +68,9 @@ func (client *TcpClient) SendFileToServer(destinationPath string) {
 	client.Logs <- fmt.Sprintf("--> Queued file or directory: %s", destinationPath)
 	client.mutex.Unlock()
 
+	// Determine the base path for relative path calculation
+	basePath := filepath.Dir(destinationPath)
+
 	for {
 		client.mutex.Lock()
 		if len(client.FileQueue) == 0 {
@@ -77,9 +88,15 @@ func (client *TcpClient) SendFileToServer(destinationPath string) {
 			continue
 		}
 
+		relativePath, err := filepath.Rel(basePath, filePath)
+		if err != nil {
+			client.Logs <- fmt.Sprintf("--> Error calculating relative path: %v", err)
+			continue
+		}
+
 		if fileInfo.IsDir() {
 			// Send the directory itself
-			err = client.sendDirectory(filePath)
+			err = client.sendDirectory(filePath, relativePath)
 			if err != nil {
 				client.Logs <- fmt.Sprintf("--> TCP CLIENT Error sending directory %v", err)
 			}
@@ -100,7 +117,7 @@ func (client *TcpClient) SendFileToServer(destinationPath string) {
 				client.Logs <- fmt.Sprintf("--> TCP CLIENT Error walking directory %v", err)
 			}
 		} else {
-			err = client.sendFile(filePath)
+			err = client.sendFile(filePath, relativePath)
 			if err != nil {
 				client.Logs <- fmt.Sprintf("--> TCP CLIENT Error sending file %v", err)
 			}
@@ -112,7 +129,7 @@ func (client *TcpClient) SendFileToServer(destinationPath string) {
 	client.Logs <- "--> All files and directories sent successfully!"
 }
 
-func (client *TcpClient) sendDirectory(dirPath string) error {
+func (client *TcpClient) sendDirectory(dirPath string, relativePath string) error {
 	client.Logs <- fmt.Sprintf("--> Sending directory: %v", dirPath)
 
 	// Prepare metadata for the directory
@@ -120,7 +137,8 @@ func (client *TcpClient) sendDirectory(dirPath string) error {
 		FileName: filepath.Base(dirPath),
 		FileType: "directory",
 		FileSize: 0,
-		FullPath: dirPath,
+		IsDir:    true,
+		FullPath: relativePath,
 	}
 
 	metaDataBytes, err := json.Marshal(metaData)
@@ -145,7 +163,7 @@ func (client *TcpClient) sendDirectory(dirPath string) error {
 	return nil
 }
 
-func (client *TcpClient) sendFile(filePath string) error {
+func (client *TcpClient) sendFile(filePath string, relativePath string) error {
 	client.Logs <- fmt.Sprintf("--> Sending file: %v", filePath)
 	// Open the file
 	file, err := os.Open(filePath)
@@ -165,7 +183,8 @@ func (client *TcpClient) sendFile(filePath string) error {
 		FileName: fileInfo.Name(),
 		FileType: filepath.Ext(fileInfo.Name()),
 		FileSize: fileInfo.Size(),
-		FullPath: filePath,
+		FullPath: relativePath,
+		IsDir:    false,
 	}
 
 	metaDataBytes, err := json.Marshal(metaData)

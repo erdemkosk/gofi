@@ -22,14 +22,6 @@ type TcpServer struct {
 	currentConnection *net.TCPConn
 }
 
-type FileMetadata struct {
-	FileName string `json:"fileName"`
-	FileType string `json:"fileType"`
-	FileSize int64  `json:"fileSize"`
-	IsDir    bool   `json:"isDir"`
-	FullPath string `json:"fullPath"`
-}
-
 func CreateNewTcpServer(ip string, port int, logs chan string) (*TcpServer, error) {
 	tcpAddr, err := net.ResolveTCPAddr("tcp4", fmt.Sprintf("%s:%d", ip, port))
 	if err != nil {
