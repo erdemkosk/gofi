@@ -31,6 +31,8 @@ var (
 	parentMap                      map[*tview.TreeNode]*tview.TreeNode
 	listDropDown                   *tview.DropDown
 	currentPath                    string
+	tcpClient                      *tcp.TcpClient
+	tcpServer                      *tcp.TcpServer
 )
 
 func (command StartCommand) Execute(cmd *cobra.Command, args []string) {
@@ -51,7 +53,7 @@ func (command StartCommand) Execute(cmd *cobra.Command, args []string) {
 	go listenForTcpConnection()
 
 	udpServer, udpClient := udp.CreateUdpPeers(logChannel)
-	tcpServer, _ := tcp.CreateNewTcpServer(logic.GetLocalIP(), config.TCP_PORT, logChannel)
+	tcpServer, _ = tcp.CreateNewTcpServer(logic.GetLocalIP(), config.TCP_PORT, logChannel)
 
 	defer udpServer.CloseConnection()
 	defer udpClient.CloseConnection()
@@ -219,14 +221,9 @@ func connectButtonHandler() {
 	if index != -1 {
 
 		msg := udp.ConvertJsonToUdpMessage([]byte(option), logChannel)
+		var err error
 
-		client, err := tcp.CreateNewTcpClient(msg.IP, msg.Port, logChannel)
-
-		messageChannel := make(chan string)
-
-		go func() {
-			client.SendMessage("Hello, Server!", messageChannel)
-		}()
+		tcpClient, err = tcp.CreateNewTcpClient(msg.IP, msg.Port, logChannel)
 
 		if err != nil {
 			fmt.Println("Error creating TCP client:", err)
@@ -327,6 +324,9 @@ func changeUiState() {
 				}
 			}
 			return nil
+		} else if event.Key() == tcell.KeyEsc {
+			go SendSelectedFiles()
+			return nil
 		}
 
 		return event
@@ -334,4 +334,25 @@ func changeUiState() {
 
 	addNodes(tree.GetRoot(), desktopPath)
 	app.SetFocus(tree)
+}
+
+func SendSelectedFiles() {
+	for filePath := range selectedNodes {
+		fileName := filepath.Base(filePath)
+		// Dosya gönderme işlemi yapılabilir
+		logChannel <- fmt.Sprintf("Sending file: %s", fileName)
+		logChannel <- fmt.Sprintf("NASIIII")
+		// İstemci tarafından seçilen dosyaları gönder
+		// Burada dosyaların TCP istemcisine gönderilmesi için gerekli işlemler yapılabilir
+		// Örneğin:
+		if tcpClient != nil {
+			tcpClient.SendFileToServer(filePath)
+
+		} else if tcpServer != nil {
+			err := tcpServer.SendFileToClient(filePath)
+			if err != nil {
+				logChannel <- fmt.Sprintf("Error sending file %s: %v", fileName, err)
+			}
+		}
+	}
 }
