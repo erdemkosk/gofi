@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 )
 
 type TcpClient struct {
@@ -39,7 +38,17 @@ func CreateNewTcpClient(ip string, port int, logs chan string) (*TcpClient, erro
 		return nil, err
 	}
 
+	err = conn.SetNoDelay(true)
+	if err != nil {
+		return nil, err
+	}
+
 	logs <- "--> TCP CLIENT connected successfully!"
+
+	// Set TCP connection write buffer size (e.g., 64KB)
+	conn.SetWriteBuffer(64 * 1024)
+	// Set TCP connection to send data immediately
+	conn.SetLinger(0)
 
 	client := &TcpClient{
 		Connection:  conn,
@@ -122,8 +131,6 @@ func (client *TcpClient) SendFileToServer(destinationPath string) {
 				client.Logs <- fmt.Sprintf("--> TCP CLIENT Error sending file %v", err)
 			}
 		}
-
-		time.Sleep(1 * time.Second) // 1 saniye ara
 	}
 
 	client.Logs <- "--> All files and directories sent successfully!"

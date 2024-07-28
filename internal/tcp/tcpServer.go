@@ -93,6 +93,13 @@ func (server *TcpServer) CloseConnection() {
 func (server *TcpServer) handleConnection() {
 	defer server.currentConnection.Close()
 
+	// Disable Nagle algorithm
+	err := server.currentConnection.SetNoDelay(true)
+	if err != nil {
+		server.Logs <- fmt.Sprintf("--> TCP SERVER Error setting TCP_NODELAY: %v", err)
+		return
+	}
+
 	for {
 		// Metadata size buffer reading
 		sizeBuffer := make([]byte, 16)
@@ -130,9 +137,9 @@ func (server *TcpServer) handleConnection() {
 		// Determine destination path
 		var destinationPath string
 		if fileMetaData.FullPath == "" {
-			destinationPath = filepath.Join(logic.GetPath("/Desktop"), fileMetaData.FileName)
+			destinationPath = filepath.Join(logic.GetPath("/Desktp"), fileMetaData.FileName)
 		} else {
-			destinationPath = filepath.Join(logic.GetPath("/Desktop"), fileMetaData.FullPath)
+			destinationPath = filepath.Join(logic.GetPath("/Desktp"), fileMetaData.FullPath)
 		}
 
 		server.Logs <- fmt.Sprintf("--> DESTINATION: %v", destinationPath)
