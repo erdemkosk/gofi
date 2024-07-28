@@ -52,10 +52,8 @@ func (server *TcpServer) Listen(stop chan bool, connectionEstablished chan<- boo
 
 			conn, err := server.Connection.AcceptTCP()
 			if err != nil {
-
 				netErr, ok := err.(net.Error)
 				if ok && netErr.Timeout() {
-
 					continue
 				}
 
@@ -117,7 +115,6 @@ func (server *TcpServer) handleConnection() {
 		metadataSizeStr := string(sizeBuffer)
 		metadataSizeStr = strings.TrimSpace(metadataSizeStr)
 
-		// EOF karakterlerini atla ve sadece geçerli sayı değerlerini işleme
 		if strings.Contains(metadataSizeStr, "EOF") {
 			server.Logs <- "--> TCP SERVER Skipping EOF in metadata size"
 			continue
@@ -164,8 +161,7 @@ func (server *TcpServer) handleConnection() {
 					server.Logs <- fmt.Sprintf("--> TCP SERVER Error creating directory: %v", err)
 					return
 				}
-
-				// If it's a directory, no need to create the file, continue to next entry
+				// Continue to the next entry
 				continue
 			}
 
@@ -212,6 +208,14 @@ func (server *TcpServer) handleConnection() {
 
 			file.Close()
 			server.Logs <- fmt.Sprintf("--> TCP SERVER File received and saved: %s", destinationPath)
+
+			// Send ACK to the client
+			ack := "ACK"
+			_, err = server.currentConnection.Write([]byte(ack))
+			if err != nil {
+				server.Logs <- fmt.Sprintf("--> TCP SERVER Error sending ACK: %v", err)
+				return
+			}
 		} else {
 			server.Logs <- "--> TCP SERVER Error: Invalid metadata size"
 			return
@@ -258,7 +262,7 @@ func (server *TcpServer) SendFileToClient(filePath string) error {
 
 	// Send metadata size
 	metaDataSize := len(metaDataJSON)
-	metaDataSizeStr := fmt.Sprintf("%16d", metaDataSize)
+	metaDataSizeStr := fmt.Sprintf("%016d", metaDataSize)
 	_, err = conn.Write([]byte(metaDataSizeStr))
 	if err != nil {
 		return fmt.Errorf("error sending metadata size: %v", err)

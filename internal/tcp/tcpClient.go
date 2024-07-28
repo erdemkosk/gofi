@@ -248,5 +248,15 @@ func (client *TcpClient) sendFile(filePath string, relativePath string) error {
 		return fmt.Errorf("error sending EOF marker: %v", err)
 	}
 
+	// Wait for acknowledgment from server before continuing
+	ackBuffer := make([]byte, 3)
+	_, err = io.ReadFull(client.Connection, ackBuffer)
+	if err != nil {
+		return fmt.Errorf("error reading acknowledgment from server: %v", err)
+	}
+	if string(ackBuffer) != "ACK" {
+		return fmt.Errorf("error: server did not acknowledge file transfer")
+	}
+
 	return nil
 }
