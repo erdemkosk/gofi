@@ -141,9 +141,9 @@ func (server *TcpServer) handleConnection() {
 		// Determine destination path
 		var destinationPath string
 		if fileMetaData.FullPath == "" {
-			destinationPath = filepath.Join(logic.GetPath("/Desktp"), fileMetaData.FileName)
+			destinationPath = filepath.Join(logic.GetPath("/Desktop"), fileMetaData.FileName)
 		} else {
-			destinationPath = filepath.Join(logic.GetPath("/Desktp"), fileMetaData.FullPath)
+			destinationPath = filepath.Join(logic.GetPath("/Desktop"), fileMetaData.FullPath)
 		}
 
 		server.Logs <- fmt.Sprintf("--> DESTINATION: %v", destinationPath)
