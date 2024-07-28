@@ -167,6 +167,12 @@ func (client *TcpClient) sendDirectory(dirPath string, relativePath string) erro
 		return fmt.Errorf("error sending metadata: %v", err)
 	}
 
+	// Send end-of-directory marker
+	_, err = client.Connection.Write([]byte("EOF"))
+	if err != nil {
+		return fmt.Errorf("error sending EOF marker: %v", err)
+	}
+
 	return nil
 }
 
@@ -235,6 +241,12 @@ func (client *TcpClient) sendFile(filePath string, relativePath string) error {
 	}
 
 	client.Logs <- fmt.Sprintf("--> Sent %d bytes of file data for: %s", totalSent, fileInfo.Name())
+
+	// Send end-of-file marker
+	_, err = client.Connection.Write([]byte("EOF"))
+	if err != nil {
+		return fmt.Errorf("error sending EOF marker: %v", err)
+	}
 
 	return nil
 }

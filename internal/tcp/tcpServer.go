@@ -187,6 +187,11 @@ func (server *TcpServer) handleConnection() {
 				return
 			}
 
+			if n > 3 && string(buffer[n-3:]) == "EOF" {
+				receivedBytes += int64(n) - 3
+				break
+			}
+
 			_, err = file.Write(buffer[:n])
 			if err != nil {
 				server.Logs <- fmt.Sprintf("--> TCP SERVER Error writing to file: %v", err)
