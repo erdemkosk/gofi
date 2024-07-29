@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 )
 
 type TcpClient struct {
@@ -123,7 +122,14 @@ func (client *TcpClient) SendFileToServer(destinationPath string) {
 			}
 		}
 
-		time.Sleep(1 * time.Second) // 1 saniye ara
+		ackBuffer := make([]byte, 3)
+		_, err = client.Connection.Read(ackBuffer)
+		if err != nil || string(ackBuffer) != "ACK" {
+			client.Logs <- fmt.Sprintf("--> Error receiving ACK: %v", err)
+			break
+		}
+
+		client.Logs <- "--> Received ACK from server"
 	}
 
 	client.Logs <- "--> All files and directories sent successfully!"

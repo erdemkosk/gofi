@@ -146,7 +146,13 @@ func (server *TcpServer) handleConnection() {
 				return
 			}
 
-			// If it's a directory, no need to create the file, continue to next entry
+			// Send ACK to client
+			_, err = server.currentConnection.Write([]byte("ACK"))
+			if err != nil {
+				server.Logs <- fmt.Sprintf("--> TCP SERVER Error sending ACK: %v", err)
+				return
+			}
+
 			continue
 		}
 
@@ -188,6 +194,13 @@ func (server *TcpServer) handleConnection() {
 
 		file.Close()
 		server.Logs <- fmt.Sprintf("--> TCP SERVER File received and saved: %s", destinationPath)
+
+		// Send ACK to client
+		_, err = server.currentConnection.Write([]byte("ACK"))
+		if err != nil {
+			server.Logs <- fmt.Sprintf("--> TCP SERVER Error sending ACK: %v", err)
+			return
+		}
 	}
 }
 
